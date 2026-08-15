@@ -1,0 +1,11 @@
+.artifacts
+.git
+.pytest_cache
+.ruff_cache
+.venv
+.visiondoctor
+__pycache__
+*.pyc
+node_modules
+tests
+VisionDoctor_技术设计规格_v1.0.docx

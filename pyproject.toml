@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "visiondoctor"
+version = "0.1.0"
+description = "Environment-decoupled multimodal machine-vision fault diagnosis and repair core"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.28,<1",
+  "numpy>=2.0,<3",
+  "pillow>=11,<13",
+  "pydantic>=2.10,<3",
+  "pypdf>=6,<7",
+  "pyyaml>=6,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<7",
+  "ruff>=0.11,<1",
+]
+api = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+]
+web = [
+  "starlette>=0.47,<1",
+  "streamlit>=1.45,<2",
+]
+
+[project.scripts]
+visiondoctor = "visiondoctor.cli:main"
+visiondoctor-web = "visiondoctor.web.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/visiondoctor"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+markers = [
+  "integration: exercises installed external infrastructure such as Docker and Gazebo",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [".artifacts", ".venv", ".visiondoctor", "node_modules"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

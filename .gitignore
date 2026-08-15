@@ -1,0 +1,27 @@
+.artifacts/
+.coverage
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.ruff_cache/
+.runtime/
+.wrangler/
+.venv/
+.visiondoctor/
+__pycache__/
+*.py[cod]
+node_modules/
+
+# The example project ships as a Git bundle so its two commits survive cloning.
+# See example/README.md for how to restore the working copy.
+example/robot_cell_vision/
+
+# Contest submission package: the proposal deck, demo video, and all supporting
+# evidence are delivered through the contest site rather than this repository.
+# The files stay on local disk; only their tracking is dropped. This single rule
+# replaces the earlier per-extension ones, which are now redundant.
+submission/
+
+# Technical design spec, delivered as a document rather than through the repo.
+*.docx
