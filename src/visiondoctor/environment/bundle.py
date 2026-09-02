@@ -43,9 +43,15 @@ class Artifact(BundleModel):
 
 
 class TimelineEvent(BundleModel):
+    """A coarse marker on the bundle's own clock.
+
+    Cross-source comparison rests on artifacts, which each name their domain;
+    a timeline event that names none belongs to the bundle's clock.
+    """
+
     at: datetime
     event: str
-    clock_domain: str
+    clock_domain: str | None = None
 
 
 class TaskResult(BundleModel):
@@ -73,11 +79,12 @@ class ObservationBundle(BundleModel):
     def cross_source_comparable(self) -> bool:
         """Whether artifacts from different sources may be placed on one axis.
 
-        One clock domain needs no alignment.  Several domains need a declared
-        alignment error; without one the product must not attribute across them.
+        A collection run comes off one host, so the domains inside it -- sim
+        time and wall clock, say -- relate to each other.  A bundle spanning
+        hosts has to state its alignment error before anything may be compared.
         """
 
-        return len(self.clock_domains) <= 1 or self.clock.alignment_error_ms is not None
+        return bool(self.clock.source) or self.clock.alignment_error_ms is not None
 
     @property
     def succeeded(self) -> bool:

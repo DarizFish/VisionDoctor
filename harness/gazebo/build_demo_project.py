@@ -12,7 +12,10 @@ HARNESS_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = HARNESS_ROOT.parents[1]
 TEMPLATE_ROOT = HARNESS_ROOT / "demo_project_template"
 DEFAULT_RUNTIME = REPOSITORY_ROOT / ".runtime" / "gazebo-pick-cell"
-DEFAULT_WORKSPACE = DEFAULT_RUNTIME / "projects" / "tabletop-faulty"
+# Keep an earlier long-tool worktree intact.  The compact fixture has its own
+# public project workspace so operators can still compare or preserve a prior
+# candidate without silently rewriting it.
+DEFAULT_WORKSPACE = DEFAULT_RUNTIME / "projects" / "topdown-ik-final-faulty"
 
 # This source stays in the harness process only while a bundle is built.  The
 # generated normal revision is for the operator's before/after demonstration;
@@ -44,12 +47,12 @@ _PRIVATE_SCORING = {
     "rotation_tolerance_rad": 0.02,
     "case_targets": {
         "A": {
-            "position": [0.365386543, 0.172741170, 0.250243791],
-            "quaternion_xyzw": [-0.709151310, 0.004273792, -0.031112506, 0.704356562],
+            "position": [0.500000000, -0.100000000, 0.160000000],
+            "quaternion_xyzw": [0.000000000, 1.000000000, 0.000000000, 0.000000000],
         },
         "B": {
-            "position": [0.348538342, -0.189302554, 0.250570999],
-            "quaternion_xyzw": [-0.700360495, -0.101638123, 0.178814684, 0.683513114],
+            "position": [0.500000000, -0.300000000, 0.160000000],
+            "quaternion_xyzw": [0.000000000, 1.000000000, 0.000000000, 0.000000000],
         },
     },
 }
@@ -70,9 +73,10 @@ def ensure_private_scoring() -> Path:
     private_root = HARNESS_ROOT / "private"
     private_root.mkdir(parents=True, exist_ok=True)
     scoring_path = private_root / "pick_a17_scoring.json"
-    if not scoring_path.is_file():
+    encoded = json.dumps(_PRIVATE_SCORING, ensure_ascii=False, indent=2) + "\n"
+    if not scoring_path.is_file() or scoring_path.read_text(encoding="utf-8") != encoded:
         scoring_path.write_text(
-            json.dumps(_PRIVATE_SCORING, ensure_ascii=False, indent=2) + "\n",
+            encoded,
             encoding="utf-8",
         )
     return scoring_path

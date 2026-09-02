@@ -1,0 +1,11 @@
+{
+  "part_id": "B",
+  "classification": "missed_pick_pose",
+  "success": false,
+  "position_error_m": 0.01775,
+  "rotation_error_rad": 0.042096,
+  "capture": {
+    "depth_valid_ratio": 0.6630631510416667,
+    "frame_id": "rgbd_camera/camera_link/rgbd"
+  }
+}

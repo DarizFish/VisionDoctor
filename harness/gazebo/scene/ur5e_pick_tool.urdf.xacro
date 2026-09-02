@@ -1,0 +1,84 @@
+<?xml version="1.0"?>
+<!-- The UR5e as ur_simulation_gz ships it, plus the two-finger tool this cell
+     actually picks with.  The tool is rigid, because the demonstration judges
+     arrival of the TCP and the fingers never have to close.  Its geometry is
+     the single source of tool0_to_tcp in the project's tool_profile.yaml.
+     Keep comments here free of a colon followed by a space - the launch file
+     hands this whole document to rclpy as a parameter that is parsed as YAML,
+     and such a line reads as a mapping key and rejects the description. -->
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="$(arg name)">
+  <xacro:arg name="name" default="ur"/>
+  <xacro:arg name="joint_limit_params" default="/opt/pick-cell/scene/ur5e_demo_joint_limits.yaml"/>
+  <xacro:include filename="$(find ur_simulation_gz)/urdf/ur_gz.urdf.xacro"/>
+
+  <!-- This is an arrival-based cell rather than a payload-dynamics demo.
+       Suppress gravity on the stock arm links so a TCP regression is not
+       hidden by the simulated controller's distal-joint torque limit. -->
+  <gazebo reference="base_link"><gravity>false</gravity></gazebo>
+  <gazebo reference="shoulder_link"><gravity>false</gravity></gazebo>
+  <gazebo reference="upper_arm_link"><gravity>false</gravity></gazebo>
+  <gazebo reference="forearm_link"><gravity>false</gravity></gazebo>
+  <gazebo reference="wrist_1_link"><gravity>false</gravity></gazebo>
+  <gazebo reference="wrist_2_link"><gravity>false</gravity></gazebo>
+  <gazebo reference="wrist_3_link"><gravity>false</gravity></gazebo>
+
+  <material name="pick_tool_body"><color rgba="0.85 0.86 0.88 1"/></material>
+  <material name="pick_tool_finger"><color rgba="0.20 0.22 0.26 1"/></material>
+
+  <!-- Mounted on the flange with the 0.02 rad seating yaw the tool profile
+       declares.  A 6 mm tool plate gap keeps the palm off the wrist_3 mesh,
+       which MoveIt would otherwise report as a permanent self-collision.
+       The compact palm and fingers finish at the 35 mm grasp centre. -->
+  <joint name="pick_tool_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0.0199997"/>
+    <parent link="tool0"/>
+    <child link="pick_tool"/>
+  </joint>
+
+  <link name="pick_tool">
+    <inertial>
+      <origin xyz="0 0 0.018"/>
+      <!-- The fixture is visual/kinematic in this arrival-based demo.  Keep a
+           negligible positive inertial value so the stock simulated UR
+           controller still represents the unladen arm used for the arrival
+           predicate. -->
+      <mass value="0.00001"/>
+      <inertia ixx="0.00000001" ixy="0" ixz="0" iyy="0.00000001" iyz="0" izz="0.000000005"/>
+    </inertial>
+    <visual name="palm">
+      <origin xyz="0 0 0.014"/>
+      <geometry><box size="0.07 0.06 0.028"/></geometry>
+      <material name="pick_tool_body"/>
+    </visual>
+    <visual name="finger_left">
+      <origin xyz="0 0.034 0.034"/>
+      <geometry><box size="0.016 0.012 0.030"/></geometry>
+      <material name="pick_tool_finger"/>
+    </visual>
+    <visual name="finger_right">
+      <origin xyz="0 -0.034 0.034"/>
+      <geometry><box size="0.016 0.012 0.030"/></geometry>
+      <material name="pick_tool_finger"/>
+    </visual>
+    <!-- Arrival at the TCP is the grasp criterion for this demonstration.
+         These visuals intentionally have no collision bodies, so contact with
+         a static part does not turn a vision/TCP regression into a physics
+         failure or imply that the cell performs a physical attachment. -->
+  </link>
+
+  <!-- The grasp point itself, so the tool transform is visible in TF and not
+       only in a configuration file. -->
+  <joint name="pick_tool_tcp_joint" type="fixed">
+    <origin xyz="0 0 0.035" rpy="0 0 0"/>
+    <parent link="pick_tool"/>
+    <child link="pick_tool_tcp"/>
+  </joint>
+  <link name="pick_tool_tcp"/>
+
+  <gazebo reference="pick_tool">
+    <gravity>false</gravity>
+    <visual name="palm"><material><ambient>0.85 0.86 0.88 1</ambient><diffuse>0.85 0.86 0.88 1</diffuse></material></visual>
+    <visual name="finger_left"><material><ambient>0.20 0.22 0.26 1</ambient><diffuse>0.20 0.22 0.26 1</diffuse></material></visual>
+    <visual name="finger_right"><material><ambient>0.20 0.22 0.26 1</ambient><diffuse>0.20 0.22 0.26 1</diffuse></material></visual>
+  </gazebo>
+</robot>

@@ -75,6 +75,7 @@ def main() -> None:
     st.set_page_config(page_title="PICK-A17 Gazebo 操作台", layout="wide")
     st.title("PICK-A17 独立 Gazebo 抓取操作台")
     st.caption("本地 harness：真实 Gazebo Qt 窗口 + 场景相机证据；不连接产品或 Agent。")
+    st.caption("台装 UR5e、低矮双工位；每次抓取先到工件正上方，再自上而下下压和抬起。")
     controller = _controller()
     try:
         status = controller.status()
@@ -126,7 +127,8 @@ def main() -> None:
             ):
                 _action("运行完整节拍", lambda: controller.run_cycle(Path(workspace)))
         st.caption(
-            "完整节拍依次采集相机、运行所选项目的算法、驱动 UR5e、记录轨迹并生成脱敏 bundle。"
+            "完整节拍依次采集相机、运行所选项目的算法、到达预抓点、下压/抬起，"
+            "记录轨迹并生成脱敏 bundle。"
         )
 
     if action := st.session_state.get("pick_cell_last_action"):

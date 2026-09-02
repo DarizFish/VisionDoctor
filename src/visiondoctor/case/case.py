@@ -37,6 +37,9 @@ class Case:
         self.evidence: list[Evidence] = []
         self.findings: list[SegmentFinding] = []
         self.hypotheses: list[Hypothesis] = []
+        #: Evidence the host actually delivered.  A model claiming to have
+        #: checked something it never asked for cannot cite it.
+        self.examined: set[str] = set()
 
     @property
     def segments(self) -> tuple[Segment, ...]:
@@ -57,8 +60,13 @@ class Case:
 
         self.observations.append(bundle)
         admitted: list[Evidence] = []
+
+        def take(evidence: Evidence) -> None:
+            self.evidence.append(evidence)
+            admitted.append(evidence)
+
         for artifact in bundle.artifacts:
-            admitted.append(
+            take(
                 Evidence(
                     evidence_id=self._next_id(),
                     bundle_id=bundle.run_id,
@@ -72,7 +80,7 @@ class Case:
             )
         for result in bundle.results:
             verdict = "succeeded" if result.success else f"failed as {result.classification}"
-            admitted.append(
+            take(
                 Evidence(
                     evidence_id=self._next_id(),
                     bundle_id=bundle.run_id,
@@ -83,7 +91,6 @@ class Case:
                     summary=f"task {result.part_id} {verdict}",
                 )
             )
-        self.evidence.extend(admitted)
         return tuple(admitted)
 
     def record(self, finding: SegmentFinding) -> SegmentFinding:
@@ -103,10 +110,23 @@ class Case:
             verdicts[finding.segment] = finding.status
         return verdicts
 
+    def add_evidence(self, evidence: Evidence) -> Evidence:
+        """Take in evidence a tool produced, and mark it as actually seen."""
+
+        self.evidence.append(evidence)
+        self.examined.add(evidence.evidence_id)
+        return evidence
+
+    def next_evidence_id(self) -> str:
+        return self._next_id()
+
     def _require_known(self, evidence_ids: tuple[str, ...]) -> None:
         unknown = sorted(set(evidence_ids) - self.evidence_ids)
         if unknown:
             raise ValueError(f"case {self.case_id} holds no evidence {', '.join(unknown)}")
+        unseen = sorted(set(evidence_ids) - self.examined)
+        if unseen:
+            raise ValueError(f"case {self.case_id} never delivered {', '.join(unseen)}")
 
     def _next_id(self) -> str:
         return f"EV-{len(self.evidence) + 1:03d}"

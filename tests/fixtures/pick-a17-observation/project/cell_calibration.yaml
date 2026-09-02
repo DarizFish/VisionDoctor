@@ -1,0 +1,8 @@
+calibration_id: pick-a17-tabletop-camera-base-v4
+camera_to_base:
+  position: [1.150, -1.100, 1.450]
+  quaternion_xyzw: [-0.334701067, 0.170352168, 0.825969584, 0.420392174]
+pick_offset_from_part:
+  position: [0.0, 0.0, 0.0]
+  quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]
+units: {length: m, angle: rad, quaternion: xyzw}

@@ -4,6 +4,7 @@ from .case import Case, Evidence
 from .chain import (
     CORE_SEGMENTS,
     GUIDED_SEGMENTS,
+    SEGMENT_SCOPE,
     Hypothesis,
     Segment,
     SegmentFinding,
@@ -16,6 +17,7 @@ from .repair import ApprovalRecord, RepairPlan
 __all__ = [
     "CORE_SEGMENTS",
     "GUIDED_SEGMENTS",
+    "SEGMENT_SCOPE",
     "ApprovalRecord",
     "Case",
     "Evidence",

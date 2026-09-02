@@ -1,8 +1,0 @@
-calibration_id: pick-a17-camera-base-v3
-camera_to_base:
-  position: [0.480, -0.080, 0.690]
-  quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]
-pick_offset_from_part:
-  position: [0.0, 0.0, 0.105]
-  quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]
-units: {length: m, angle: rad, quaternion: xyzw}

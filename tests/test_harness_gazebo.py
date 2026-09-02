@@ -62,12 +62,12 @@ def test_normal_revision_recovers_while_faulty_head_misses_pick_pose(tmp_path: P
         "part_id": "A",
         "detection_id": "test-detection",
         "detected_part_in_camera": {
-            "position": [1.905419740, -0.114652442, 0.176447603],
+            "position": [1.769961602, -0.030638599, -0.080605233],
             "quaternion_xyzw": [
-                -0.053542663,
-                0.477958803,
-                -0.714231571,
-                0.508489753,
+                0.820718088,
+                0.176804984,
+                -0.347379300,
+                0.417719330,
             ],
         },
     }
@@ -102,19 +102,14 @@ def test_normal_revision_recovers_while_faulty_head_misses_pick_pose(tmp_path: P
     normal = replay("HEAD~1")
     tool = pose(
         {
-            "position": [0.005, 0.000, 0.008],
+            "position": [0.000, 0.000, 0.035],
             "quaternion_xyzw": [0.0, 0.0, 0.0099998, 0.99995],
         }
     )
     desired_tcp = pose(
         {
-            "position": [0.365386543, 0.172741170, 0.250243791],
-            "quaternion_xyzw": [
-                -0.709151310,
-                0.004273792,
-                -0.031112506,
-                0.704356562,
-            ],
+            "position": [0.500000000, -0.100000000, 0.160000000],
+            "quaternion_xyzw": [0.000000000, 1.000000000, 0.000000000, 0.000000000],
         }
     )
     normal_error = pose_error(desired_tcp, compose(pose(normal["commanded_flange_base"]), tool))
@@ -206,7 +201,7 @@ def test_controller_status_is_local_state_without_a_running_container(
     status = controller.status()
     assert status["running"] is False
     assert status["gazebo_gui_running"] is False
-    assert status["default_workspace"].endswith("projects\\tabletop-faulty")
+    assert status["default_workspace"].endswith("projects\\topdown-ik-final-faulty")
     assert status["image"] == "visiondoctor/ros-gazebo:jazzy-v1"
 
 

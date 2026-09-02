@@ -33,26 +33,19 @@ class PickCellController:
     WSLG_SOURCE = "/mnt/host/wslg/.X11-unix"
     WSLG_TARGET = "/tmp/.X11-unix"
     BUNDLE_SCHEMA = "observation-bundle/v1"
+    # The fixture only occupies the low table zone.  Each cycle first reaches
+    # this point above a part, then performs the visible downward pick and
+    # returns to the same clearance height.
+    PREGRASP_CLEARANCE_M = 0.16
     # Joint-space seeds measured on the live UR5e/MoveIt stack for the two
-    # fixed tabletop poses.  They select the same feasible IK branch for the
-    # faulty and repaired TCP commands; the command pose remains public input.
+    # compact-fixture poses.  Both workstations are on the verified stable
+    # side of the robot; the command pose remains public input.
     IK_SEEDS = {
-        "A": (
-            -2.58086512252255,
-            -1.62654311330553,
-            -2.16252306112823,
-            -2.50427761027341,
-            -2.53067154558669,
-            3.07515560492662,
-        ),
-        "B": (
-            -0.924764898673514,
-            -1.24619974909407,
-            1.82456182612289,
-            -0.580084094920351,
-            -1.32475821906725,
-            -3.04941313005015,
-        ),
+        "A": (2.831821001, -2.091303128, -1.907909934, -0.713175869, 1.570797940, 1.241024775),
+        # Keep B on the right-hand elbow branch for both its raised
+        # pregrasp and its downward pick.  The neutral seed admits a second
+        # valid IK solution that MoveIt cannot connect between these stages.
+        "B": (2.831821001, -2.091303128, -1.907909934, -0.713175869, 1.570797940, 1.241024775),
     }
 
     def __init__(
@@ -163,6 +156,7 @@ class PickCellController:
             "ur_simulation_gz",
             "ur_sim_control.launch.py",
             "ur_type:=ur5e",
+            "description_file:=/opt/pick-cell/scene/ur5e_pick_tool.urdf.xacro",
             "launch_rviz:=false",
             "gazebo_gui:=true",
             "world_file:=/opt/pick-cell/scene/pick_cell_world.sdf",
@@ -374,12 +368,15 @@ class PickCellController:
     ) -> dict[str, Any]:
         output = run_root / "parts" / case_id / "trajectory.json"
         relative = output.relative_to(self.runtime_root)
+        pregrasp = self._top_down_pregrasp(command)
         result = self._docker(
             "exec",
             "--env",
             "PICK_CELL_TARGET_FLANGE=" + json.dumps(command, separators=(",", ":")),
             "--env",
             "PICK_CELL_IK_SEED=" + json.dumps(self.IK_SEEDS[case_id], separators=(",", ":")),
+            "--env",
+            "PICK_CELL_PREGRASP_FLANGE=" + json.dumps(pregrasp, separators=(",", ":")),
             "--env",
             "PICK_CELL_MOTION_OUTPUT=/opt/pick-cell/runs/" + relative.as_posix(),
             self.CONTAINER,
@@ -389,7 +386,7 @@ class PickCellController:
                 "source /opt/ros/jazzy/setup.bash && exec python3 "
                 "/opt/pick-cell/ros/grasp_cycle_probe.py"
             ),
-            timeout_s=110.0,
+            timeout_s=480.0,
         )
         payload = self._structured_result(result.stdout, "PICK_CELL_MOTION=")
         if payload is None:
@@ -536,24 +533,24 @@ class PickCellController:
             "A": {
                 "detection_id": "camera-frame-A",
                 "detected_part_in_camera": {
-                    "position": [1.905419740, -0.114652442, 0.176447603],
+                    "position": [1.769961602, -0.030638599, -0.080605233],
                     "quaternion_xyzw": [
-                        -0.053542663,
-                        0.477958803,
-                        -0.714231571,
-                        0.508489753,
+                        0.820718088,
+                        0.176804984,
+                        -0.347379300,
+                        0.417719330,
                     ],
                 },
             },
             "B": {
                 "detection_id": "camera-frame-B",
                 "detected_part_in_camera": {
-                    "position": [1.702169790, 0.112032404, -0.020181657],
+                    "position": [1.653875963, 0.087061624, -0.193169800],
                     "quaternion_xyzw": [
-                        -0.180064970,
-                        0.359461189,
-                        -0.642715066,
-                        0.652136185,
+                        0.820718088,
+                        0.176804984,
+                        -0.347379300,
+                        0.417719330,
                     ],
                 },
             },
@@ -564,6 +561,15 @@ class PickCellController:
             "part_id": case_id,
             **detections[case_id],
         }
+
+    @classmethod
+    def _top_down_pregrasp(cls, command: dict[str, Any]) -> dict[str, list[float]]:
+        """Return the vertical-clearance point for this top-down demonstration."""
+
+        target = pose(command)
+        position = list(target["position"])
+        position[2] += cls.PREGRASP_CLEARANCE_M
+        return {"position": position, "quaternion_xyzw": list(target["quaternion_xyzw"])}
 
     def _validate_workspace(self, workspace: Path) -> None:
         required = [

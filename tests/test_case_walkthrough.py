@@ -1,9 +1,9 @@
-"""The demonstration path, walked once end to end.
+"""The investigation path, walked once on a real observation.
 
-The bundle under ``fixtures/pick-a17-faulty`` was produced by running the real
-faulty demo project; its logged command composes the tool transform directly
-where the TCP-to-flange convention requires the inverse.  That discrepancy is
-visible from the bundle alone -- no fault ground truth is involved.
+The bundle under ``fixtures/pick-a17-observation`` is the text half of an actual
+cell run: the logged command composes the tool transform forward where the
+TCP-to-flange convention needs its inverse, and the chain check measures exactly
+that.  Nothing here reads a fault ground truth.
 """
 
 from __future__ import annotations
@@ -24,54 +24,77 @@ from visiondoctor.case import (
     diagnosis_gate,
 )
 from visiondoctor.environment import FileBundleAdapter
+from visiondoctor.investigation import Investigation, Toolbox, build_view
 
-BUNDLE = Path(__file__).parent / "fixtures" / "pick-a17-faulty"
+BUNDLE = Path(__file__).parent / "fixtures" / "pick-a17-observation"
 
 
-def test_a_failed_pick_is_demarcated_from_the_evidence_it_carries() -> None:
+def _case() -> tuple[Case, FileBundleAdapter, dict[str, str]]:
     adapter = FileBundleAdapter(BUNDLE)
-    bundle = adapter.collect()
+    case = Case("CASE-A17", "A17 工位抓偏", guided_motion=True)
+    admitted = case.admit(adapter.collect())
+    return case, adapter, {item.reference: item.evidence_id for item in admitted}
+
+
+def test_a_failed_pick_is_demarcated_from_what_the_host_delivered() -> None:
+    case, adapter, reference = _case()
+    bundle = case.observations[0]
     assert not bundle.succeeded
-    assert bundle.cross_source_comparable
-
-    case = Case("CASE-A17", "A17 工位抓偏")
-    case.extend_for_guided_motion()
     assert len(case.segments) == 8
+    assert len(case.evidence_ids) == len(bundle.artifacts) + len(bundle.results)
 
-    admitted = case.admit(bundle)
-    assert len(admitted) == len(bundle.artifacts) + len(bundle.results)
-    reference = {item.reference: item.evidence_id for item in admitted}
-    detection = reference["parts/A/algorithm/input.json"]
-    command = reference["parts/A/algorithm/output.json"]
-    tool = reference["project/tool_profile.yaml"]
+    view = build_view(case, bundle)
+    assert len(view["evidence_catalogue"]) == len(case.evidence)
+    assert all(entry["status"] == "untested" for entry in view["chain"])
 
-    assert adapter.read_artifact("parts/A/algorithm/output.json")
-
-    case.record(
-        SegmentFinding(
-            segment=Segment.ALGORITHM,
-            status=SegmentStatus.CLEARED,
-            note="标定链路重算出的期望 TCP 与检测输入一致，算法段没有偏离",
-            evidence_ids=(detection, command),
-        )
+    turn = Investigation(case, Toolbox(case, adapter, bundle), "机器人抓偏了，是哪一段的问题")
+    delivered = turn.invoke(
+        "read_evidence",
+        evidence_ids=[
+            reference["parts/A/algorithm/output.json"],
+            reference["parts/B/algorithm/output.json"],
+        ],
     )
-    case.record(
-        SegmentFinding(
-            segment=Segment.INTERFACE,
-            status=SegmentStatus.SUSPECT,
-            note="指令法兰位姿等于 TCP 直接复合工具变换；改用逆变换才自洽",
-            evidence_ids=(command, tool),
-        )
-    )
-    case.propose(
-        Hypothesis(
-            hypothesis_id="H1",
-            target_segment=Segment.INTERFACE,
-            statement="TCP 到法兰的工具补偿方向用反了",
-            evidence_ids=(command, tool),
-        )
-    )
+    assert all("commanded_flange_base" in item["text"] for item in delivered)
 
+    check = turn.invoke(
+        "check_transform_chain",
+        detection_evidence_id=reference["parts/A/algorithm/input.json"],
+        calibration_evidence_id=reference["project/cell_calibration.yaml"],
+        tool_evidence_id=reference["project/tool_profile.yaml"],
+        command_evidence_id=reference["parts/A/algorithm/output.json"],
+        motion_evidence_id=reference["parts/A/motion.json"],
+    )
+    # The command sits exactly on the forward composition and far from the inverse.
+    assert check["residual_if_tool_forward"]["position_m"] == 0.0
+    assert check["residual_if_tool_inverted"]["position_m"] > 0.015
+
+    record = turn.commit(
+        findings=(
+            SegmentFinding(
+                segment=Segment.ALGORITHM,
+                status=SegmentStatus.CLEARED,
+                note="重算的期望 TCP 与记录的检测输入一致",
+                evidence_ids=(reference["parts/A/algorithm/input.json"], check["evidence_id"]),
+            ),
+            SegmentFinding(
+                segment=Segment.INTERFACE,
+                status=SegmentStatus.SUSPECT,
+                note="指令位姿对正向复合零残差，对取逆复合差出任务容差",
+                evidence_ids=(check["evidence_id"],),
+            ),
+        ),
+        hypotheses=(
+            Hypothesis(
+                hypothesis_id="H1",
+                target_segment=Segment.INTERFACE,
+                statement="TCP 到法兰的工具补偿方向用反了",
+                evidence_ids=(check["evidence_id"],),
+            ),
+        ),
+        next_step="申请查看变换相关源码",
+    )
+    assert [call.name for call in record.calls] == ["read_evidence", "check_transform_chain"]
     assert diagnosis_gate(case).passed
     assert case.demarcation()[Segment.IMAGING] is SegmentStatus.UNTESTED
 
@@ -92,18 +115,21 @@ def test_a_failed_pick_is_demarcated_from_the_evidence_it_carries() -> None:
         decided_at=bundle.created_at,
     )
     assert approval_gate(plan, approval).passed
-    substituted = plan.model_copy(update={"diff": "something else entirely"})
-    assert not approval_gate(substituted, approval).passed
+    assert not approval_gate(plan.model_copy(update={"diff": "别的东西"}), approval).passed
 
 
-def test_a_conclusion_cannot_cite_evidence_the_case_never_took_in() -> None:
-    case = Case("CASE-A17", "A17 工位抓偏")
-    with pytest.raises(ValueError, match="holds no evidence"):
-        case.record(
-            SegmentFinding(
-                segment=Segment.INTERFACE,
-                status=SegmentStatus.SUSPECT,
-                note="没有来源的结论",
-                evidence_ids=("EV-999",),
-            )
+def test_a_conclusion_cannot_cite_evidence_the_host_never_delivered() -> None:
+    case, adapter, reference = _case()
+    turn = Investigation(case, Toolbox(case, adapter, case.observations[0]), "先给个结论")
+    with pytest.raises(ValueError, match="never delivered"):
+        turn.commit(
+            findings=(
+                SegmentFinding(
+                    segment=Segment.INTERFACE,
+                    status=SegmentStatus.SUSPECT,
+                    note="没有读过就下的结论",
+                    evidence_ids=(reference["parts/B/motion.json"],),
+                ),
+            ),
+            next_step="无",
         )
