@@ -36,12 +36,18 @@ def _decode(content: str) -> dict[str, Any]:
     return json.loads(text[start : end + 1])
 
 
-def _findings(payload: dict[str, Any]) -> tuple[SegmentFinding, ...]:
-    """A verdict that cites nothing is recorded as untested, not as a verdict."""
+def _findings(payload: dict[str, Any], case: Case) -> tuple[SegmentFinding, ...]:
+    """Keep the citations the host actually delivered; drop the rest.
+
+    A verdict left with nothing behind it is recorded as untested.  The turn
+    still stands: refusing one citation should not throw away the work.
+    """
 
     findings = []
     for item in payload.get("findings") or ():
-        evidence = tuple(item.get("evidence_ids") or ())
+        evidence = tuple(
+            name for name in (item.get("evidence_ids") or ()) if name in case.examined
+        )
         status = SegmentStatus(item["status"])
         if not evidence:
             status = SegmentStatus.UNTESTED
@@ -56,13 +62,15 @@ def _findings(payload: dict[str, Any]) -> tuple[SegmentFinding, ...]:
     return tuple(findings)
 
 
-def _hypotheses(payload: dict[str, Any]) -> tuple[Hypothesis, ...]:
+def _hypotheses(payload: dict[str, Any], case: Case) -> tuple[Hypothesis, ...]:
     return tuple(
         Hypothesis(
             hypothesis_id=str(item.get("hypothesis_id") or f"H{index + 1}"),
             target_segment=Segment(item["target_segment"]),
             statement=str(item.get("statement") or ""),
-            evidence_ids=tuple(item.get("evidence_ids") or ()),
+            evidence_ids=tuple(
+                name for name in (item.get("evidence_ids") or ()) if name in case.examined
+            ),
         )
         for index, item in enumerate(payload.get("hypotheses") or ())
     )
@@ -110,8 +118,8 @@ def investigate(
                 )
                 continue
             return turn.commit(
-                findings=_findings(payload),
-                hypotheses=_hypotheses(payload),
+                findings=_findings(payload, case),
+                hypotheses=_hypotheses(payload, case),
                 next_step=str(payload.get("next_step") or ""),
             )
         messages.append(answer.raw_message)

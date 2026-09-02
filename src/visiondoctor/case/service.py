@@ -22,6 +22,7 @@ class CaseRecord:
     adapter: FileBundleAdapter | None = None
     bundle: ObservationBundle | None = None
     turns: list[Any] = field(default_factory=list)
+    messages: list[dict[str, Any]] = field(default_factory=list)
     approvals: dict[str, ApprovalRecord] = field(default_factory=dict)
     applied_at: datetime | None = None
     recheck: Recheck | None = None
@@ -45,6 +46,9 @@ class CaseService:
             {
                 "case_id": key,
                 "title": record.case.title,
+                "project": (
+                    str(record.case.project.repository) if record.case.project else None
+                ),
                 "evidence": len(record.case.evidence),
                 "observations": len(record.case.observations),
                 "gate": diagnosis_gate(record.case).passed,
@@ -66,6 +70,13 @@ class CaseService:
         admitted = record.case.admit(bundle)
         record.adapter = adapter
         record.bundle = bundle
+        record.messages.append(
+            {
+                "role": "source",
+                "content": f"接入观察证据包 {bundle.run_id}",
+                "detail": f"{len(bundle.artifacts)} 件工件 · 收入 {len(admitted)} 条证据",
+            }
+        )
         return {"run_id": bundle.run_id, "admitted": len(admitted)}
 
     def bind_project(
@@ -104,6 +115,30 @@ class CaseService:
             gateway=OpenAICompatibleGateway(ModelSettings.from_environment()),
         )
         record.turns.append(turn)
+        if record.case.title == "新的诊断":
+            record.case.title = prompt[:24]
+        record.messages.append({"role": "user", "content": prompt})
+        record.messages.append(
+            {
+                "role": "assistant",
+                "content": turn.next_step,
+                "turn_id": turn.turn_id,
+                "findings": [
+                    f"{item.segment.value} → {item.status.value}"
+                    for item in turn.findings
+                    if item.status.value != "untested"
+                ],
+                "hypotheses": [item.statement for item in turn.hypotheses],
+                "calls": [
+                    {"name": call.name, "delivered": list(call.delivered),
+                     "arguments": {
+                         key: (value if len(str(value)) < 200 else str(value)[:200] + "…")
+                         for key, value in call.arguments.items()
+                     }}
+                    for call in turn.calls
+                ],
+            }
+        )
         return turn.model_dump(mode="json")
 
     def approve(
@@ -119,6 +154,13 @@ class CaseService:
             decided_at=datetime.now(UTC),
         )
         record.approvals[plan_id] = decision
+        record.messages.append(
+            {
+                "role": "source",
+                "content": ("已批准 " if approved else "已退回 ") + plan.plan_id,
+                "detail": f"{approver} · 冻结 {plan.frozen_hash[:16]}",
+            }
+        )
         return approval_gate(plan, decision).model_dump(mode="json")
 
     def mark_applied(self, case_id: str) -> datetime:
@@ -134,6 +176,13 @@ class CaseService:
         record.case.admit(after)
         outcome = recheck(before=record.bundle, after=after, applied_at=record.applied_at)
         record.recheck = outcome
+        record.messages.append(
+            {
+                "role": "source",
+                "content": f"现场复核 {after.run_id}",
+                "detail": outcome.scope,
+            }
+        )
         return outcome.as_dict()
 
     # ---- what a viewer sees ------------------------------------------------------
@@ -148,6 +197,7 @@ class CaseService:
             "observation": self._observation(record),
             "project": self._project(case),
             "chain": self._chain(case),
+            "messages": record.messages,
             "hypotheses": [item.model_dump(mode="json") for item in case.hypotheses],
             "evidence": [
                 {

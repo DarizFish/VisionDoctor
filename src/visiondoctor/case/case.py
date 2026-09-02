@@ -104,7 +104,16 @@ class Case:
         return tuple(admitted)
 
     def record(self, finding: SegmentFinding) -> SegmentFinding:
+        """Take a verdict on one segment, but never let a blank one erase a real one."""
+
         self._require_known(finding.evidence_ids)
+        standing = next((item for item in self.findings if item.segment is finding.segment), None)
+        if (
+            standing is not None
+            and finding.status is SegmentStatus.UNTESTED
+            and standing.status is not SegmentStatus.UNTESTED
+        ):
+            return standing
         self.findings = [item for item in self.findings if item.segment is not finding.segment]
         self.findings.append(finding)
         return finding
