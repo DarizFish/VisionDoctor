@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from visiondoctor.case import SEGMENT_SCOPE, Case
+from visiondoctor.case import SEGMENT_SCOPE, Case, diagnosis_gate
 from visiondoctor.environment import ObservationBundle
 
 SYSTEM_PROMPT = """\
@@ -32,6 +32,12 @@ SYSTEM_PROMPT = """\
    本系统应当采用的约定，要你自己判断。它不会告诉你哪段有问题，也不会告诉你
    故障属于哪一类——那是你要判断的。同一组残差可能来自代码缺陷、配置写反或标定漂移，
    这三者的修复方式完全不同，你必须说清楚是哪一种以及依据。
+
+6. 诊断门未通过时你看不到源码。门要求：至少一段 suspect、至少一段 cleared、至少一个有证据
+   支撑的假设。通过之后 list_source / read_source / propose_repair 才会出现在工具里。
+7. 提交候选修复时，补丁会在隔离工作树里用本次运行**真实记录的输入**复跑一遍。复跑通过只说明
+   代码现在算出了链路本来的意图，**不等于现场已经恢复**——现场恢复只能由改动应用后新采集的
+   证据授予。
 
 只返回一个 JSON 对象：
 {
@@ -96,11 +102,82 @@ TOOLS: tuple[dict[str, Any], ...] = (
 )
 
 
+SOURCE_TOOLS: tuple[dict[str, Any], ...] = (
+    {
+        "type": "function",
+        "function": {
+            "name": "list_source",
+            "description": "列出绑定提交下的源码文件名。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_source",
+            "description": (
+                "读取绑定提交下的一个源码文件——"
+                "是当时运行的那份，不是当前工作树。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "propose_repair",
+            "description": (
+                "提交一个候选修复：给出文件路径和该文件修改后的完整内容。"
+                "它会在隔离工作树里用本次真实输入复跑并返回结果，绑定的仓库不会被改动。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_segment": {"type": "string"},
+                    "hypothesis_id": {"type": "string"},
+                    "path": {"type": "string"},
+                    "new_text": {"type": "string"},
+                    "rationale": {"type": "string"},
+                },
+                "required": [
+                    "target_segment",
+                    "hypothesis_id",
+                    "path",
+                    "new_text",
+                    "rationale",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    },
+)
+
+
+def tools_for(case: Case) -> tuple[dict[str, Any], ...]:
+    """Source becomes visible only once the demarcation carries itself."""
+
+    if case.project is not None and diagnosis_gate(case).passed:
+        return TOOLS + SOURCE_TOOLS
+    return TOOLS
+
+
 def build_view(case: Case, bundle: ObservationBundle) -> dict[str, Any]:
     """Case state, the observation's own account of itself, and the catalogue."""
 
+    verdict = diagnosis_gate(case)
     return {
-        "case": {"case_id": case.case_id, "title": case.title},
+        "case": {
+            "case_id": case.case_id,
+            "title": case.title,
+            "project_bound": case.project is not None,
+            "diagnosis_gate": {"passed": verdict.passed, "missing": list(verdict.reasons)},
+            "source_visible": bool(case.project is not None and verdict.passed),
+        },
         "observation": {
             "run_id": bundle.run_id,
             "collected_at": bundle.created_at.isoformat(),

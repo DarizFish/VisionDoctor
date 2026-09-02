@@ -81,33 +81,33 @@
       <link name="fixture_link">
         <visual name="base_plate"><pose>0 0 0.025 0 0 0</pose><geometry><box><size>0.70 1.00 0.05</size></box></geometry>
           <material><ambient>0.28 0.31 0.36 1</ambient><diffuse>0.28 0.31 0.36 1</diffuse></material></visual>
-        <visual name="nest_A"><pose>-0.120 -0.100 0.080 0 0 0</pose><geometry><box><size>0.16 0.14 0.06</size></box></geometry>
+        <visual name="nest_A"><pose>-0.120 -0.100 0.060 0 0 0</pose><geometry><box><size>0.16 0.14 0.02</size></box></geometry>
           <material><ambient>0.22 0.25 0.30 1</ambient><diffuse>0.22 0.25 0.30 1</diffuse></material></visual>
-        <visual name="nest_B"><pose>-0.120 -0.300 0.080 0 0 0</pose><geometry><cylinder><radius>0.080</radius><length>0.06</length></cylinder></geometry>
+        <visual name="nest_B"><pose>-0.120 -0.300 0.060 0 0 0</pose><geometry><cylinder><radius>0.080</radius><length>0.02</length></cylinder></geometry>
           <material><ambient>0.22 0.25 0.30 1</ambient><diffuse>0.22 0.25 0.30 1</diffuse></material></visual>
       </link>
     </model>
 
     <model name="part_A_flat">
       <static>true</static>
-      <pose>0.500000 -0.100000 0.160000 0 0 0</pose>
+      <pose>0.500000 -0.100000 0.100000 0 0 0</pose>
       <link name="part_link">
         <!-- Arrival at the configured TCP is the grasp predicate.  Keep the
              part visual-only so contact does not turn a software offset into
              a Gazebo contact failure. -->
-        <visual name="body"><geometry><box><size>0.11 0.07 0.12</size></box></geometry>
+        <visual name="body"><geometry><box><size>0.10 0.04 0.06</size></box></geometry>
           <material><ambient>0.10 0.55 0.94 1</ambient><diffuse>0.10 0.55 0.94 1</diffuse></material></visual>
-        <visual name="fiducial"><pose>0 0 0.051 0 0 0</pose><geometry><box><size>0.045 0.025 0.003</size></box></geometry><material><ambient>0.95 0.95 0.95 1</ambient></material></visual>
+        <visual name="fiducial"><pose>0 0 0.028 0 0 0</pose><geometry><box><size>0.045 0.025 0.003</size></box></geometry><material><ambient>0.95 0.95 0.95 1</ambient></material></visual>
       </link>
     </model>
 
     <model name="part_B_tilted">
       <static>true</static>
-      <pose>0.500000 -0.300000 0.160000 0 0 0</pose>
+      <pose>0.500000 -0.300000 0.100000 0 0 0</pose>
       <link name="part_link">
-        <visual name="body"><geometry><cylinder><radius>0.045</radius><length>0.10</length></cylinder></geometry>
+        <visual name="body"><geometry><cylinder><radius>0.020</radius><length>0.06</length></cylinder></geometry>
           <material><ambient>1.0 0.48 0.10 1</ambient><diffuse>1.0 0.48 0.10 1</diffuse></material></visual>
-        <visual name="cap"><pose>0 0 0.051 0 0 0</pose><geometry><cylinder><radius>0.033</radius><length>0.004</length></cylinder></geometry><material><ambient>0.96 0.96 0.96 1</ambient></material></visual>
+        <visual name="cap"><pose>0 0 0.028 0 0 0</pose><geometry><cylinder><radius>0.014</radius><length>0.004</length></cylinder></geometry><material><ambient>0.96 0.96 0.96 1</ambient></material></visual>
       </link>
     </model>
 

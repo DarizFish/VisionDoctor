@@ -7,8 +7,10 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 from visiondoctor.environment import ObservationBundle
+from visiondoctor.repair import ProjectBinding
 
 from .chain import GUIDED_SEGMENTS, Hypothesis, Segment, SegmentFinding, SegmentStatus, chain_for
+from .repair import RepairPlan
 
 
 class Evidence(BaseModel):
@@ -33,10 +35,14 @@ class Case:
         self.case_id = case_id
         self.title = title
         self.guided_motion = guided_motion
+        #: The repository this case is about.  Source is read at its revision,
+        #: never from a working tree that may have moved on.
+        self.project: ProjectBinding | None = None
         self.observations: list[ObservationBundle] = []
         self.evidence: list[Evidence] = []
         self.findings: list[SegmentFinding] = []
         self.hypotheses: list[Hypothesis] = []
+        self.repair_plans: list[RepairPlan] = []
         #: Evidence the host actually delivered.  A model claiming to have
         #: checked something it never asked for cannot cite it.
         self.examined: set[str] = set()
@@ -48,6 +54,10 @@ class Case:
     @property
     def evidence_ids(self) -> frozenset[str]:
         return frozenset(item.evidence_id for item in self.evidence)
+
+    def bind_project(self, binding: ProjectBinding) -> ProjectBinding:
+        self.project = binding
+        return binding
 
     def extend_for_guided_motion(self) -> tuple[Segment, ...]:
         """Vision output is consumed by an actuator, so three more segments exist."""

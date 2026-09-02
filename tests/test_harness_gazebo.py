@@ -62,7 +62,7 @@ def test_normal_revision_recovers_while_faulty_head_misses_pick_pose(tmp_path: P
         "part_id": "A",
         "detection_id": "test-detection",
         "detected_part_in_camera": {
-            "position": [1.769961602, -0.030638599, -0.080605233],
+            "position": [1.781695155, -0.024170628, -0.085942750],
             "quaternion_xyzw": [
                 0.820718088,
                 0.176804984,
@@ -108,7 +108,7 @@ def test_normal_revision_recovers_while_faulty_head_misses_pick_pose(tmp_path: P
     )
     desired_tcp = pose(
         {
-            "position": [0.500000000, -0.100000000, 0.160000000],
+            "position": [0.500000000, -0.100000000, 0.148000000],
             "quaternion_xyzw": [0.000000000, 1.000000000, 0.000000000, 0.000000000],
         }
     )
@@ -201,7 +201,7 @@ def test_controller_status_is_local_state_without_a_running_container(
     status = controller.status()
     assert status["running"] is False
     assert status["gazebo_gui_running"] is False
-    assert status["default_workspace"].endswith("projects\\topdown-ik-final-faulty")
+    assert status["default_workspace"].endswith("projects\\topdown-clearance-final-faulty")
     assert status["image"] == "visiondoctor/ros-gazebo:jazzy-v1"
 
 

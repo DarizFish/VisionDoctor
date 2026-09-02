@@ -45,6 +45,7 @@ class ReplayOutcome:
 
     base_revision: str
     changed_files: tuple[str, ...]
+    diff: str
     project_tests: CommandOutcome | None
     replays: tuple[dict[str, Any], ...]
 
@@ -53,6 +54,7 @@ class ReplayOutcome:
             "scope": "isolated_replay",
             "base_revision": self.base_revision,
             "changed_files": list(self.changed_files),
+            "diff": self.diff,
             "project_tests": self.project_tests.as_dict() if self.project_tests else None,
             "replays": list(self.replays),
         }
@@ -84,10 +86,11 @@ def _clean_environment() -> dict[str, str]:
 def replay(
     *,
     binding: ProjectBinding,
-    patch_text: str,
     candidate_id: str,
     sandbox_root: Path,
     inputs: dict[str, bytes],
+    patch_text: str = "",
+    edits: dict[str, str] | None = None,
     timeout_s: float = 60.0,
 ) -> ReplayOutcome:
     """Apply the candidate in a detached worktree and feed it the recorded inputs."""
@@ -104,6 +107,12 @@ def replay(
     )
     try:
         worktree = handle.worktree
+        for relative, content in (edits or {}).items():
+            target = (worktree / relative).resolve()
+            if worktree not in target.parents:
+                raise ValueError(f"edit escapes the worktree: {relative}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
         changed = subprocess.run(
             ["git", "diff", "--name-only", binding.revision, "--"],
             cwd=worktree,
@@ -112,6 +121,10 @@ def replay(
             check=False,
         ).stdout.split()
         tests = _run(binding.test_command, worktree, timeout_s) if binding.test_command else None
+        diff = subprocess.run(
+            ["git", "diff", binding.revision, "--"],
+            cwd=worktree, capture_output=True, text=True, check=False,
+        ).stdout
         replays: list[dict[str, Any]] = []
         for name, payload in inputs.items():
             scratch = worktree / ".replay"
@@ -131,6 +144,7 @@ def replay(
         return ReplayOutcome(
             base_revision=binding.revision,
             changed_files=tuple(sorted(set(changed))),
+            diff=diff,
             project_tests=tests,
             replays=tuple(replays),
         )

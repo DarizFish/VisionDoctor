@@ -15,7 +15,7 @@ DEFAULT_RUNTIME = REPOSITORY_ROOT / ".runtime" / "gazebo-pick-cell"
 # Keep an earlier long-tool worktree intact.  The compact fixture has its own
 # public project workspace so operators can still compare or preserve a prior
 # candidate without silently rewriting it.
-DEFAULT_WORKSPACE = DEFAULT_RUNTIME / "projects" / "topdown-ik-final-faulty"
+DEFAULT_WORKSPACE = DEFAULT_RUNTIME / "projects" / "topdown-clearance-final-faulty"
 
 # This source stays in the harness process only while a bundle is built.  The
 # generated normal revision is for the operator's before/after demonstration;
@@ -47,11 +47,11 @@ _PRIVATE_SCORING = {
     "rotation_tolerance_rad": 0.02,
     "case_targets": {
         "A": {
-            "position": [0.500000000, -0.100000000, 0.160000000],
+            "position": [0.500000000, -0.100000000, 0.148000000],
             "quaternion_xyzw": [0.000000000, 1.000000000, 0.000000000, 0.000000000],
         },
         "B": {
-            "position": [0.500000000, -0.300000000, 0.160000000],
+            "position": [0.500000000, -0.300000000, 0.148000000],
             "quaternion_xyzw": [0.000000000, 1.000000000, 0.000000000, 0.000000000],
         },
     },

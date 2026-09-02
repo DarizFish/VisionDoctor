@@ -16,7 +16,7 @@ py -3 harness/gazebo/build_demo_project.py
 ```
 
 第一条命令会生成 `harness/gazebo/ur5e_pick_demo.bundle`，其中有一个正常提交和一个故障
-HEAD，并在 `.runtime/gazebo-pick-cell/projects/topdown-ik-final-faulty` 建立默认可运行工作区。为避免覆盖可能已
+HEAD，并在 `.runtime/gazebo-pick-cell/projects/topdown-clearance-final-faulty` 建立默认可运行工作区。为避免覆盖可能已
 修复的工作区，已有默认工作区时该初始化会拒绝覆盖。运行时生成的
 私有评分资料在 `harness/gazebo/private/`，不会写进观察包或 Git bundle。
 
@@ -41,23 +41,24 @@ streamlit run harness/gazebo/console.py --server.address 127.0.0.1 --server.port
 py -3 -m harness.gazebo.cli bootstrap-project
 py -3 -m harness.gazebo.cli start
 py -3 -m harness.gazebo.cli capture
-py -3 -m harness.gazebo.cli run --workspace .runtime/gazebo-pick-cell/projects/topdown-ik-final-faulty
+py -3 -m harness.gazebo.cli run --workspace .runtime/gazebo-pick-cell/projects/topdown-clearance-final-faulty
 py -3 -m harness.gazebo.cli stop
 ```
 
 ## 工位与已验证节拍
 
-场景是一张加大台面：UR5e 固定在可见的台面安装座上，两个工件位于基座前方同一已实测可达区域、互不重叠的低矮定位座中；
-RGB-D 和观察相机都指向这一工作区。夹具的 TCP 轴朝下，每个 A/B 节拍都经过“安全位 → 工件正上方的
-预抓点 → 下压抓取位 → 抬回预抓点 → 安全位”。A/B 目标来自当前 UR5e 的实时 MoveIt IK 和实际往返验证。
+场景是一张加大台面：UR5e 固定在可见的台面安装座上，两个窄小工件位于基座前方同一已实测可达区域、
+互不重叠的低矮定位座中。RGB-D 和观察相机都指向这一工作区。夹具的 TCP 轴朝下，每个 A/B 节拍都经过
+“安全位 → 工件正上方的预抓点 → 下压抓取位 → 抬回预抓点 → 安全位”。正常抓取位的指尖与工件顶面保留
+约 4 mm 可见间隙，避免把到位判定伪装成物理接触。A/B 目标来自当前 UR5e 的实时 MoveIt IK 和实际往返验证。
 探针提供固定的关节种子以重复求解，抓取目标始终来自所选项目工作区输出的法兰位姿，并以实测关节到位
 作为完成依据。
 
 **已验证（2026-09-02）：** 官方 Gazebo Qt GUI 在 WSLg 中可见；RGB-D 与观察相机采集正常。
-低矮双工位和向下抓取的故障运行 `run-20260902T125221Z-5e6fc5bf` 中，A/B 都完成“预抓点 → 下压 →
-抬起”并被判为 `missed_pick_pose`，位置偏差为 70.941 mm、70.590 mm。故障代码把逆工具补偿重复两次，
+低矮双工位和向下抓取的故障运行 `run-20260902T134241Z-59a05bb6` 中，A/B 都完成“预抓点 → 下压 →
+抬起”并被判为 `missed_pick_pose`，位置偏差为 69.086 mm、69.604 mm。故障代码把逆工具补偿重复两次，
 所以 TCP 稳定停在工件上方而非压入工装。使用同一 Git bundle 的正常参考提交复跑
-`run-20260902T125356Z-4fcf4855`，A/B 都为 `within_tolerance`，位置偏差为 1.557 mm、1.916 mm。
+`run-20260902T134059Z-786a6b63`，A/B 都为 `within_tolerance`，位置偏差为 0.946 mm、2.927 mm。
 故障包已导出：52 个工件都有时钟字段和匹配的 SHA-256，manifest 不含私有判分词。变更 SDF、工具配置或
 A/B 目标后，必须重新完成这两次真实 MoveIt 验证。
 

@@ -3,8 +3,8 @@ camera_to_base:
   position: [1.150, -1.100, 1.450]
   quaternion_xyzw: [-0.334701067, 0.170352168, 0.825969584, 0.420392174]
 # Grasp recipe in the part frame: approach along the part's own x axis with the
-# fingers straddling its y axis, 0.040 m above the part origin.
+# fingers straddling its y axis, 0.048 m above the part origin.
 pick_offset_from_part:
-  position: [0.0, 0.0, 0.040]
+  position: [0.0, 0.0, 0.048]
   quaternion_xyzw: [0.0, 0.707106781, 0.0, 0.707106781]
 units: {length: m, angle: rad, quaternion: xyzw}

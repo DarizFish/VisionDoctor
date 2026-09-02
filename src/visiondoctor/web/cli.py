@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def main() -> None:
-    """Launch the packaged Streamlit app through Streamlit's supported CLI."""
+    """Launch the case console through Streamlit's supported CLI."""
 
     from streamlit.web import cli as streamlit_cli
 

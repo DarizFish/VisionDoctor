@@ -9,6 +9,7 @@ they cite came back through the host.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from visiondoctor.case import Case, Hypothesis, Segment, SegmentFinding, SegmentStatus
@@ -18,7 +19,7 @@ from visiondoctor.multimodal import VisionGateway
 
 from .tools import Toolbox
 from .turn import CALL_BUDGET, DecisionTurn, Investigation
-from .view import SYSTEM_PROMPT, TOOLS, build_view
+from .view import SYSTEM_PROMPT, build_view, tools_for
 
 
 class InvestigationError(RuntimeError):
@@ -36,15 +37,23 @@ def _decode(content: str) -> dict[str, Any]:
 
 
 def _findings(payload: dict[str, Any]) -> tuple[SegmentFinding, ...]:
-    return tuple(
-        SegmentFinding(
-            segment=Segment(item["segment"]),
-            status=SegmentStatus(item["status"]),
-            note=str(item.get("note") or ""),
-            evidence_ids=tuple(item.get("evidence_ids") or ()),
+    """A verdict that cites nothing is recorded as untested, not as a verdict."""
+
+    findings = []
+    for item in payload.get("findings") or ():
+        evidence = tuple(item.get("evidence_ids") or ())
+        status = SegmentStatus(item["status"])
+        if not evidence:
+            status = SegmentStatus.UNTESTED
+        findings.append(
+            SegmentFinding(
+                segment=Segment(item["segment"]),
+                status=status,
+                note=str(item.get("note") or ""),
+                evidence_ids=evidence,
+            )
         )
-        for item in payload.get("findings") or ()
-    )
+    return tuple(findings)
 
 
 def _hypotheses(payload: dict[str, Any]) -> tuple[Hypothesis, ...]:
@@ -67,10 +76,11 @@ def investigate(
     prompt: str,
     gateway: ModelGateway,
     vision: VisionGateway | None = None,
+    sandbox_root: Path | None = None,
 ) -> DecisionTurn:
     """Let the model push the case one turn, and keep the ledger while it does."""
 
-    turn = Investigation(case, Toolbox(case, adapter, bundle, vision), prompt)
+    turn = Investigation(case, Toolbox(case, adapter, bundle, vision, sandbox_root), prompt)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
@@ -80,10 +90,25 @@ def investigate(
             + prompt,
         },
     ]
-    for _ in range(CALL_BUDGET + 1):
-        answer = gateway.complete(messages, TOOLS)
+    malformed = False
+    for _ in range(CALL_BUDGET + 2):
+        answer = gateway.complete(messages, tools_for(case))
         if not answer.tool_calls:
-            payload = _decode(answer.content)
+            try:
+                payload = _decode(answer.content)
+            except (InvestigationError, json.JSONDecodeError) as exc:
+                if malformed:
+                    raise InvestigationError(f"模型两次都没给出可解析的 JSON：{exc}") from exc
+                malformed = True
+                messages.append(answer.raw_message)
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"上一条不是可解析的 JSON（{exc}）。只输出那个 JSON 对象，"
+                        "字符串里的引号和换行要正确转义，不要加任何其他文字。",
+                    }
+                )
+                continue
             return turn.commit(
                 findings=_findings(payload),
                 hypotheses=_hypotheses(payload),

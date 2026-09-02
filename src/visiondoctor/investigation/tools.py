@@ -12,15 +12,17 @@ visible only after the diagnosis gate.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import yaml
 
-from visiondoctor.case import Case, Evidence
+from visiondoctor.case import Case, Evidence, RepairPlan, Segment, diagnosis_gate
 from visiondoctor.environment import FileBundleAdapter, ObservationBundle
 from visiondoctor.multimodal import VisionGateway
+from visiondoctor.repair import replay
 
 from .transform_check import check_transform_chain
 
@@ -37,11 +39,13 @@ class Toolbox:
         adapter: FileBundleAdapter,
         bundle: ObservationBundle,
         vision: VisionGateway | None = None,
+        sandbox_root: Path | None = None,
     ) -> None:
         self.case = case
         self.adapter = adapter
         self.bundle = bundle
         self.vision = vision
+        self.sandbox_root = sandbox_root or Path(".runtime/vd-sandbox")
 
     def list_evidence(self) -> list[dict[str, Any]]:
         """The catalogue: what exists, when it was taken, on which clock."""
@@ -197,3 +201,95 @@ class Toolbox:
 
 def artifact_path(adapter: FileBundleAdapter, reference: str) -> Path:
     return adapter.root / reference
+
+    # ---- Behind the diagnosis gate -------------------------------------------------
+
+    def list_source(self) -> dict[str, Any]:
+        """File names at the bound revision.  Available once the gate is passed."""
+
+        binding = self._unlocked_project()
+        listing = self._git(binding, "ls-tree", "-r", "--name-only", binding.revision)
+        return {"revision": binding.revision, "paths": listing.split()}
+
+    def read_source(self, path: str) -> dict[str, Any]:
+        """One file as it stood at the bound revision, not as it stands now."""
+
+        binding = self._unlocked_project()
+        text = self._git(binding, "show", f"{binding.revision}:{path}")
+        return {"revision": binding.revision, "path": path, "text": text[:TEXT_LIMIT]}
+
+    def propose_repair(
+        self,
+        *,
+        target_segment: str,
+        hypothesis_id: str,
+        path: str,
+        new_text: str,
+        rationale: str,
+    ) -> dict[str, Any]:
+        """Freeze a candidate and run it, in isolation, on this run's own inputs.
+
+        The bound repository is not touched.  A passing replay says the code now
+        computes what the chain intended -- never that the cell has recovered.
+        """
+
+        binding = self._unlocked_project()
+        inputs = {
+            artifact.path.replace("/", "-"): self.adapter.read_artifact(artifact.path)
+            for artifact in self.bundle.artifacts
+            if artifact.path.endswith("input.json")
+        }
+        try:
+            outcome = replay(
+                binding=binding,
+                candidate_id=f"PLAN-{len(self.case.repair_plans) + 1}",
+                sandbox_root=self.sandbox_root,
+                inputs=inputs,
+                edits={path: new_text},
+            )
+        except Exception as exc:  # noqa: BLE001 - the model needs the reason back
+            return {"error": f"{type(exc).__name__}: {exc}"}
+        plan = RepairPlan(
+            plan_id=f"PLAN-{len(self.case.repair_plans) + 1}",
+            case_id=self.case.case_id,
+            target_segment=Segment(target_segment),
+            hypothesis_id=hypothesis_id,
+            project_revision=binding.revision,
+            diff=outcome.diff,
+        )
+        self.case.repair_plans.append(plan)
+        evidence = self.case.add_evidence(
+            Evidence(
+                evidence_id=self.case.next_evidence_id(),
+                bundle_id=self.bundle.run_id,
+                reference=f"derived/replay/{plan.plan_id}",
+                media_type="application/json",
+                captured_at=self.bundle.created_at,
+                clock_domain=self.bundle.clock.source,
+                summary=f"{plan.plan_id} 的隔离复现，理由：{rationale}",
+            )
+        )
+        return {
+            "plan_id": plan.plan_id,
+            "frozen_hash": plan.frozen_hash,
+            "evidence_id": evidence.evidence_id,
+            **outcome.as_dict(),
+        }
+
+    def _unlocked_project(self):
+        if self.case.project is None:
+            raise ValueError("这个案件还没有绑定项目仓库")
+        verdict = diagnosis_gate(self.case)
+        if not verdict.passed:
+            raise PermissionError("诊断门未通过，源码不可见：" + "；".join(verdict.reasons))
+        return self.case.project
+
+    @staticmethod
+    def _git(binding, *args: str) -> str:
+        result = subprocess.run(
+            ["git", "-C", str(binding.repository), *args],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+        )
+        if result.returncode != 0:
+            raise ValueError(result.stderr.strip() or "git 命令失败")
+        return result.stdout

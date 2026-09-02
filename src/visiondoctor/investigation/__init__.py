@@ -4,10 +4,11 @@ from .agent import InvestigationError, investigate
 from .tools import Toolbox
 from .transform_check import Residual, TransformCheck, check_transform_chain
 from .turn import CALL_BUDGET, DecisionTurn, Investigation, ToolCall
-from .view import SYSTEM_PROMPT, TOOLS, build_view
+from .view import SOURCE_TOOLS, SYSTEM_PROMPT, TOOLS, build_view, tools_for
 
 __all__ = [
     "CALL_BUDGET",
+    "SOURCE_TOOLS",
     "SYSTEM_PROMPT",
     "TOOLS",
     "DecisionTurn",
@@ -20,4 +21,5 @@ __all__ = [
     "build_view",
     "check_transform_chain",
     "investigate",
+    "tools_for",
 ]

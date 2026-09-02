@@ -13,6 +13,7 @@ from .chain import (
 )
 from .gates import GateResult, approval_gate, diagnosis_gate
 from .repair import ApprovalRecord, RepairPlan
+from .service import CaseRecord, CaseService
 
 __all__ = [
     "CORE_SEGMENTS",
@@ -20,6 +21,8 @@ __all__ = [
     "SEGMENT_SCOPE",
     "ApprovalRecord",
     "Case",
+    "CaseRecord",
+    "CaseService",
     "Evidence",
     "GateResult",
     "Hypothesis",

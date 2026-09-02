@@ -533,7 +533,7 @@ class PickCellController:
             "A": {
                 "detection_id": "camera-frame-A",
                 "detected_part_in_camera": {
-                    "position": [1.769961602, -0.030638599, -0.080605233],
+                    "position": [1.781695155, -0.024170628, -0.085942750],
                     "quaternion_xyzw": [
                         0.820718088,
                         0.176804984,
@@ -545,7 +545,7 @@ class PickCellController:
             "B": {
                 "detection_id": "camera-frame-B",
                 "detected_part_in_camera": {
-                    "position": [1.653875963, 0.087061624, -0.193169800],
+                    "position": [1.665609516, 0.093529596, -0.198507317],
                     "quaternion_xyzw": [
                         0.820718088,
                         0.176804984,

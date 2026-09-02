@@ -18,7 +18,7 @@ from visiondoctor.case import Case, Hypothesis, SegmentFinding
 
 from .tools import Toolbox
 
-CALL_BUDGET = 12
+CALL_BUDGET = 20
 
 
 class ToolCall(BaseModel):
