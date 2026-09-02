@@ -135,8 +135,10 @@ def _render_calls(calls: list[dict[str, Any]]) -> None:
         return
     with st.expander(f"这一轮做了什么 · {len(calls)} 次工具调用", expanded=False):
         for index, call in enumerate(calls):
-            delivered = "、".join(call["delivered"]) or "（没有交付证据）"
-            st.markdown(f"**{index + 1}. `{call['name']}`** → 交付 {delivered}")
+            asked = "、".join(call.get("requested") or ()) or "—"
+            first = "、".join(call["delivered"]) or "此前已读过"
+            st.markdown(f"**{index + 1}. `{call['name']}`** · 请求 {asked}")
+            st.caption(f"本轮首次交付：{first}")
             if call["arguments"]:
                 st.caption(
                     "　".join(f"{name}={value}" for name, value in call["arguments"].items())

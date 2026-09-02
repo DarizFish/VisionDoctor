@@ -27,6 +27,7 @@ class ToolCall(BaseModel):
     name: str
     arguments: dict[str, Any]
     at: datetime
+    requested: tuple[str, ...] = ()
     delivered: tuple[str, ...] = ()
 
 
@@ -67,6 +68,12 @@ class Investigation:
                 name=name,
                 arguments=arguments,
                 at=datetime.now(UTC),
+                requested=tuple(
+                    str(value)
+                    for key, value in arguments.items()
+                    if key.endswith("_evidence_id") and value
+                )
+                or tuple(str(item) for item in arguments.get("evidence_ids") or ()),
                 delivered=tuple(sorted(self.case.examined - before)),
             )
         )

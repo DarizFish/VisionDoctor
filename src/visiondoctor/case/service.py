@@ -173,6 +173,7 @@ class CaseService:
                 "hypotheses": [item.statement for item in turn.hypotheses],
                 "calls": [
                     {"name": call.name, "delivered": list(call.delivered),
+                     "requested": list(call.requested),
                      "arguments": {
                          key: (value if len(str(value)) < 200 else str(value)[:200] + "…")
                          for key, value in call.arguments.items()

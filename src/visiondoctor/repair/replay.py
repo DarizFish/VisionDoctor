@@ -113,8 +113,9 @@ def replay(
                 raise ValueError(f"edit escapes the worktree: {relative}")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
+        scope = ["--", ".", ":(exclude)**/__pycache__/**", ":(exclude).replay/**"]
         changed = subprocess.run(
-            ["git", "diff", "--name-only", binding.revision, "--"],
+            ["git", "diff", "--name-only", binding.revision, *scope],
             cwd=worktree,
             capture_output=True,
             text=True,
@@ -122,7 +123,7 @@ def replay(
         ).stdout.split()
         tests = _run(binding.test_command, worktree, timeout_s) if binding.test_command else None
         diff = subprocess.run(
-            ["git", "diff", binding.revision, "--"],
+            ["git", "diff", binding.revision, *scope],
             cwd=worktree, capture_output=True, text=True, check=False,
         ).stdout
         replays: list[dict[str, Any]] = []

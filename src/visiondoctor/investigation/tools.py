@@ -220,10 +220,6 @@ class Toolbox:
             }
         }
 
-
-def artifact_path(adapter: FileBundleAdapter, reference: str) -> Path:
-    return adapter.root / reference
-
     # ---- Behind the diagnosis gate -------------------------------------------------
 
     def list_source(self) -> dict[str, Any]:
