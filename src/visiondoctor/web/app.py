@@ -118,6 +118,7 @@ def _render_sidebar(cases: list[dict[str, Any]]) -> str | None:
                     render_case(item)
         if not cases:
             st.caption("还没有诊断会话")
+        st.session_state.selected_case = selected
         st.divider()
         try:
             health = _api("/health")
@@ -157,20 +158,20 @@ def _evidence_bytes(case_id: str, evidence_id: str) -> bytes | None:
     return base64.b64decode(payload["content_base64"])
 
 
-def _render_files(files: list[dict[str, Any]]) -> None:
+def _render_files(case_id: str, files: list[dict[str, Any]]) -> None:
     pictures = [item for item in files if str(item.get("media_type", "")).startswith("image/")]
     others = [item for item in files if item not in pictures]
     if pictures:
         columns = st.columns(min(len(pictures), 3))
         for column, item in zip(columns, pictures, strict=False):
-            payload = _evidence_bytes(st.session_state.selected_case, item["evidence_id"])
+            payload = _evidence_bytes(case_id, item["evidence_id"])
             if payload is not None:
                 column.image(payload, caption=f"{item['name']} · {item['evidence_id']}")
     for item in others:
         st.caption(f"　📄 {item['name']} · {item['evidence_id']}")
 
 
-def _render_messages(view: dict[str, Any]) -> None:
+def _render_messages(case_id: str, view: dict[str, Any]) -> None:
     messages = view.get("messages") or []
     if not messages:
         st.info("先说说发生了什么。你不需要整理成表单，也不需要判断是哪次代码改动出了问题。")
@@ -182,7 +183,7 @@ def _render_messages(view: dict[str, Any]) -> None:
     for message in messages:
         if message["role"] == "source":
             st.caption(f"📥 {message['content']} · {message.get('detail', '')}")
-            _render_files(message.get("files") or [])
+            _render_files(case_id, message.get("files") or [])
             continue
         with st.chat_message(message["role"]):
             st.markdown(str(message.get("content", "")))
@@ -457,7 +458,7 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         st.write("")
-        _render_messages(view)
+        _render_messages(case_id, view)
         _render_composer(case_id, view)
     with side:
         _render_connections(case_id, view)
