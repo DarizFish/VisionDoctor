@@ -12,12 +12,20 @@ from PIL import Image
 
 from visiondoctor.llm import AssistantTurn, ToolCall
 from visiondoctor.multimodal import (
-    OllamaVisionGateway,
+    OpenAIVisionGateway,
     VisionModelError,
     VisionModelProtocolError,
     VisionSettings,
 )
 from visiondoctor.sessions import DiagnosisSessionService
+
+
+def _settings() -> VisionSettings:
+    return VisionSettings(
+        base_url="https://vision.test/v1",
+        model="vision-test-model",
+        api_key="vision-test-key",
+    )
 
 
 def _png_attachment(name: str, color: tuple[int, int, int]) -> dict[str, str]:
@@ -108,38 +116,30 @@ def test_ollama_gateway_sends_pixels_and_requires_structured_observation(tmp_pat
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
-        assert request.url.path == "/api/chat"
-        assert body["model"] == "qwen3-vl:4b"
-        assert body["stream"] is False
-        assert len(body["messages"][1]["images"]) == 1
-        assert base64.b64decode(body["messages"][1]["images"][0]).startswith(b"\x89PNG")
-        assert body["format"]["required"] == [
-            "observations",
-            "diagnostic_relevance",
-            "limitations",
-            "confidence",
-        ]
-        return httpx.Response(
-            200,
-            json={
-                "message": {
-                    "content": json.dumps(
-                        {
-                            "observations": ["画面中央有绿色目标。"],
-                            "diagnostic_relevance": "目标位置可与用户描述比较。",
-                            "limitations": ["缺少深度。"],
-                            "confidence": 0.91,
-                        },
-                        ensure_ascii=False,
-                    )
-                }
+        assert request.url.path == "/v1/chat/completions"
+        assert request.headers["Authorization"] == "Bearer vision-test-key"
+        assert body["model"] == "vision-test-model"
+        assert body["response_format"] == {"type": "json_object"}
+        parts = body["messages"][1]["content"]
+        assert [item["type"] for item in parts] == ["text", "image_url"]
+        prefix, encoded = parts[1]["image_url"]["url"].split(",", maxsplit=1)
+        assert prefix == "data:image/png;base64"
+        assert base64.b64decode(encoded)[:4] == bytes([0x89, 0x50, 0x4E, 0x47])
+        content = json.dumps(
+            {
+                "observations": ["画面中央有绿色目标。"],
+                "diagnostic_relevance": "目标位置可与用户描述比较。",
+                "limitations": ["缺少深度。"],
+                "confidence": 0.91,
             },
+            ensure_ascii=False,
+        )
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": content}}]}
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    gateway = OllamaVisionGateway(
-        VisionSettings(model="qwen3-vl:4b"), client=client
-    )
+    gateway = OpenAIVisionGateway(_settings(), client=client)
     result = gateway.assess(
         image_path,
         attachment_id="ATT-123456789abc",
@@ -158,11 +158,14 @@ def test_ollama_gateway_rejects_incomplete_response_without_fallback(tmp_path: P
     client = httpx.Client(
         transport=httpx.MockTransport(
             lambda _request: httpx.Response(
-                200, json={"message": {"content": '{"observations": []}'}}
+                200,
+                json={
+                    "choices": [{"message": {"content": '{"observations": []}'}}]
+                },
             )
         )
     )
-    gateway = OllamaVisionGateway(VisionSettings(), client=client)
+    gateway = OpenAIVisionGateway(_settings(), client=client)
 
     with pytest.raises(VisionModelProtocolError):
         gateway.assess(

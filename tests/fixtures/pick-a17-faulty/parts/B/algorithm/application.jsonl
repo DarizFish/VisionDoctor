@@ -1,0 +1,1 @@
+{"timestamp": "2026-09-02T07:18:01.609852+00:00", "event": "flange_command_published", "run_id": "run-20260902-0640", "part_id": "B", "detection_id": "camera-frame-B", "calibration_sha256": "14cc4535337820aed55d0ab7fdf1c30e9b2578dfd5f41dfc8cba304a5d780c81", "tool_profile_sha256": "dc4ec070ef4d12ee71c520310ed62b9553f29488cec42436300f78a4cda478e5"}

@@ -1,0 +1,113 @@
+{
+  "schema_version": "observation-bundle/v1",
+  "run_id": "run-20260902-0640",
+  "source": "pick_a17_offline_replay",
+  "created_at": "2026-09-02T06:40:00+00:00",
+  "clock": {
+    "source": "cell_utc",
+    "quality": "single_host_utc"
+  },
+  "project_revision": {
+    "commit": "cfa0443fe5c9d4db9493d4f45c4fafe65a943cbe",
+    "branch": "main"
+  },
+  "timeline": [
+    {
+      "at": "2026-09-02T06:40:00+00:00",
+      "event": "detection_published:A",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "at": "2026-09-02T06:40:00.180000+00:00",
+      "event": "flange_command_published:A",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "at": "2026-09-02T06:40:12+00:00",
+      "event": "detection_published:B",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "at": "2026-09-02T06:40:12.180000+00:00",
+      "event": "flange_command_published:B",
+      "clock_domain": "cell_utc"
+    }
+  ],
+  "results": [
+    {
+      "part_id": "A",
+      "classification": "missed_pick_pose",
+      "success": false
+    },
+    {
+      "part_id": "B",
+      "classification": "missed_pick_pose",
+      "success": false
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "parts/A/algorithm/application.jsonl",
+      "media_type": "application/x-ndjson",
+      "sha256": "8cf3f74e025e43a5ba58027e710aad672a810b22cebe11261a2aa659623b39b8",
+      "captured_at": "2026-09-02T06:40:00.185000+00:00",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "path": "parts/A/algorithm/input.json",
+      "media_type": "application/json",
+      "sha256": "c1f86a25e9223df253d480a7d89b37bd44bf46d06163f5c075524327d2cd5404",
+      "captured_at": "2026-09-02T06:40:00+00:00",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "path": "parts/A/algorithm/output.json",
+      "media_type": "application/json",
+      "sha256": "78e6a05c09ab0f56e7ba584951c4e9dfab3c71a18e870db5b3c9a5954cf4a1cb",
+      "captured_at": "2026-09-02T06:40:00.180000+00:00",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "path": "parts/B/algorithm/application.jsonl",
+      "media_type": "application/x-ndjson",
+      "sha256": "d6639fea1811e9631f5f377bde63b9e0130de4461d83a24b4e1d7a095784ba83",
+      "captured_at": "2026-09-02T06:40:12.185000+00:00",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "path": "parts/B/algorithm/input.json",
+      "media_type": "application/json",
+      "sha256": "4b1eb7c0c16620340b26fe923083429987f6fd84729e040d76f8624035dccbe6",
+      "captured_at": "2026-09-02T06:40:12+00:00",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "path": "parts/B/algorithm/output.json",
+      "media_type": "application/json",
+      "sha256": "8650ba96b78b13d8c2ac96e97276984700003549a5485a6c34486821638475fe",
+      "captured_at": "2026-09-02T06:40:12.180000+00:00",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "path": "project/cell_calibration.yaml",
+      "media_type": "text/yaml",
+      "sha256": "14cc4535337820aed55d0ab7fdf1c30e9b2578dfd5f41dfc8cba304a5d780c81",
+      "captured_at": "2026-08-27T06:40:00+00:00",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "path": "project/revision.json",
+      "media_type": "application/json",
+      "sha256": "70c29817a4442c2ff9b9351a5edc5301bfd53a29412ebfcb937a39cc9c98e77f",
+      "captured_at": "2026-09-02T06:39:55+00:00",
+      "clock_domain": "cell_utc"
+    },
+    {
+      "path": "project/tool_profile.yaml",
+      "media_type": "text/yaml",
+      "sha256": "dc4ec070ef4d12ee71c520310ed62b9553f29488cec42436300f78a4cda478e5",
+      "captured_at": "2026-08-27T06:40:00+00:00",
+      "clock_domain": "cell_utc"
+    }
+  ]
+}

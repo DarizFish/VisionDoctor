@@ -1,0 +1,5 @@
+tool_name: two_finger_demo_gripper
+tool0_to_tcp:
+  position: [0.055, 0.000, 0.110]
+  quaternion_xyzw: [0.0, 0.0, 0.130526, 0.991445]
+units: {length: m, angle: rad, quaternion: xyzw}

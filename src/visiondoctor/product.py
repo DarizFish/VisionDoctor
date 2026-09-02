@@ -15,7 +15,7 @@ from visiondoctor.adapters.dataset_execution import DatasetExecutionBackend
 from visiondoctor.agents import DiagnosisAgent, PatchAgent
 from visiondoctor.evidence import EvidenceStore
 from visiondoctor.llm import ModelGateway, ModelSettings, OpenAICompatibleGateway
-from visiondoctor.multimodal import OllamaVisionGateway, VisionSettings
+from visiondoctor.multimodal import OpenAIVisionGateway, VisionSettings
 from visiondoctor.sandbox import DockerPythonRunner, GitWorktreeSandbox
 from visiondoctor.schemas import Incident, TaskKind
 from visiondoctor.tasks import get_task_adapter
@@ -72,7 +72,7 @@ def run_incident(
 
     visual_tasks = {TaskKind.DETECTION, TaskKind.OCR, TaskKind.SEGMENTATION}
     vision_gateway = (
-        OllamaVisionGateway(
+        OpenAIVisionGateway(
             VisionSettings.from_environment(),
             audit_path=workspace
             / "runs"

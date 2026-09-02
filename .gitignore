@@ -13,6 +13,11 @@ __pycache__/
 *.py[cod]
 node_modules/
 
+# Runtime-only scoring data and the operator-generated standalone project
+# bundle for the PICK-A17 Gazebo demonstration.
+harness/gazebo/private/
+harness/gazebo/ur5e_pick_demo.bundle
+
 # The example project ships as a Git bundle so its two commits survive cloning.
 # See example/README.md for how to restore the working copy.
 example/robot_cell_vision/

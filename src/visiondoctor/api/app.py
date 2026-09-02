@@ -25,7 +25,7 @@ from visiondoctor.jobs import DurableRunWorker, RunExecutor
 from visiondoctor.llm import ModelGatewayError
 from visiondoctor.llm.settings import ModelConfigurationError, ModelSettings
 from visiondoctor.multimodal import (
-    OllamaVisionGateway,
+    OpenAIVisionGateway,
     VisionConfigurationError,
     VisionSettings,
 )
@@ -325,7 +325,7 @@ def create_app(
             model = {"configured": False, "reason": str(exc)}
         try:
             vision_settings = VisionSettings.from_environment()
-            vision_model: dict = OllamaVisionGateway(vision_settings).status()
+            vision_model: dict = OpenAIVisionGateway(vision_settings).status()
         except VisionConfigurationError as exc:
             vision_model = {
                 "configured": False,

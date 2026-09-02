@@ -1,0 +1,23 @@
+{
+  "schema_version": "pick-a17-command/v1",
+  "run_id": "run-20260902-0640",
+  "part_id": "B",
+  "detection_id": "camera-frame-B",
+  "commanded_flange_base": {
+    "position": [
+      0.8232198759317784,
+      -0.236804072773903,
+      0.9697227737499667
+    ],
+    "quaternion_xyzw": [
+      0.03379773045409693,
+      0.2567196640520826,
+      -0.14261461865436714,
+      0.955308221492523
+    ]
+  },
+  "config_hashes": {
+    "cell_calibration.yaml": "14cc4535337820aed55d0ab7fdf1c30e9b2578dfd5f41dfc8cba304a5d780c81",
+    "tool_profile.yaml": "dc4ec070ef4d12ee71c520310ed62b9553f29488cec42436300f78a4cda478e5"
+  }
+}

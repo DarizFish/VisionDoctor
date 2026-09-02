@@ -1,4 +1,10 @@
-# VisionDoctor implementation status
+# VisionDoctor implementation status（历史基准）
+
+> 本文记录 `6e5785e095b14564e0d7fa4d44547ca949adb3bc` 的旧实现状态，其中“产品内仿真、
+> Incident + QA reference 入口”等内容不再是重构目标。新的权威架构、实施计划和当前状态见
+> [`../design/architecture.md`](../design/architecture.md)、
+> [`../design/implementation.md`](../design/implementation.md) 和
+> [`../design/PROGRESS.md`](../design/PROGRESS.md)。保留本文是为了迁移时核对已有资产，不应据此新增功能。
 
 Updated 2026-08-12. The frozen simulation, safety, deterministic-QA, and human-approval
 boundaries remain unchanged.

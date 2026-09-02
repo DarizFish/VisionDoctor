@@ -190,10 +190,6 @@ def _render_sidebar(
             health.get("model", {}).get("configured") and health.get("docker", {}).get("available")
         )
         st.caption("🟢 诊断服务已就绪" if ready else "🟠 诊断服务需要检查")
-        if health.get("gazebo", {}).get("available"):
-            st.caption("🟢 仿真环境可用")
-        else:
-            st.caption("⚪ 仿真环境未就绪")
         vision = health.get("vision_model", {})
         if vision.get("available") and vision.get("model_ready"):
             st.caption("🟢 图片理解已就绪")
@@ -264,8 +260,8 @@ def _render_messages(session: dict[str, Any]) -> None:
     if not messages:
         st.info("先说说发生了什么。你不需要整理成表单，也不需要判断是哪次代码改动出了问题。")
         st.markdown(
-            "例如：升级视觉节点后，机器人每次都会偏到目标右侧；也可以直接上传现场截图，"
-            "或直接使用右侧仿真现场采集相机画面。"
+            "例如：升级视觉节点后，机器人每次都会偏到目标右侧；也可以直接上传现场截图、"
+            "日志或一次运行的观察记录。"
         )
         return
     for message in messages:
@@ -394,7 +390,6 @@ def _render_connections(session: dict[str, Any]) -> None:
             st.markdown("**项目路径**")
             st.caption("连接项目后，诊断助手会在会话中动态理解代码与运行关系。")
             _render_repository_connector(session, "", "连接项目")
-    _render_simulation(session)
 
 
 def _render_repository_connector(
@@ -440,7 +435,7 @@ def _activity_label(event: dict[str, Any]) -> str:
         "VERIFYING": "正在验证改动",
         "PATCH_REJECTED": "一个无效方案已被退回",
         "AWAITING_HUMAN_APPROVAL": "修复结果等待你的确认",
-        "AWAITING_TECHNICAL_REVIEW": "仿真验证需要人工复核，候选修复已保留",
+        "AWAITING_TECHNICAL_REVIEW": "隔离环境的验证需要人工复核，候选修复已保留",
     }.get(state, "诊断流程向前推进了一步")
 
 
@@ -568,7 +563,7 @@ def _render_run_result(run_id: str, session_id: str) -> None:
     technical_review = run.get("state") == "AWAITING_TECHNICAL_REVIEW"
     if technical_review:
         st.warning(
-            "候选修复已通过代码、视觉和几何检查，但机器人仿真连续出现规划或执行波动。"
+            "候选修复已通过代码、视觉和几何检查，但隔离环境里的执行连续出现波动。"
             "系统已保留候选修复并停止自动改代码，等待技术复核。"
         )
     elif run.get("state") == "REJECTED_BY_HUMAN":
@@ -732,7 +727,7 @@ def _render_conversation(session_id: str | None, health: dict[str, Any]) -> None
         st.markdown('<div class="vd-kicker">新的诊断</div>', unsafe_allow_html=True)
         st.markdown('<div class="vd-title">今天遇到了什么问题？</div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="vd-subtle">直接描述现象。代码、图片和仿真信息都可以稍后补充。</div>',
+            '<div class="vd-subtle">直接描述现象。代码、图片和现场记录都可以稍后补充。</div>',
             unsafe_allow_html=True,
         )
         st.write("")
@@ -777,130 +772,6 @@ def _render_conversation(session_id: str | None, health: dict[str, Any]) -> None
                     st.session_state.selected_session = None
                     st.toast("会话已移到本机回收区")
                     st.rerun()
-
-
-def _simulation_action(action: str, session_id: str | None) -> None:
-    suffix = session_id[-6:] if session_id else "public"
-    created = _post(
-        "/api/v1/simulation/actions",
-        {
-            "action": action,
-            "case_id": f"scene-{suffix}",
-            "session_id": session_id,
-        },
-    )
-    if created:
-        st.rerun()
-
-
-@st.fragment(run_every="3s")
-def _render_simulation(session: dict[str, Any]) -> None:
-    session_id = str(session["session_id"])
-    status = _api("/api/v1/simulation")
-    visual = status["visual"]
-    active = status.get("active_operation")
-    connected = bool(visual["gazebo_gui_running"] or visual["gazebo_server_running"])
-    st.markdown(
-        '<div class="vd-source '
-        + ("vd-source-ready" if connected else "vd-source-wait")
-        + '"><b>仿真</b><br><span class="vd-subtle">'
-        + ("Gazebo 现场已连接" if connected else "Gazebo 现场未启动")
-        + "</span></div>",
-        unsafe_allow_html=True,
-    )
-    with st.expander("仿真现场", expanded=bool(active)):
-        st.caption("Gazebo 官方 3D 窗口；状态和采集结果会同步到当前会话。")
-        controls = st.columns(2)
-        if controls[0].button(
-        "打开 3D 现场",
-        disabled=visual["gazebo_gui_running"] or active is not None,
-        key=f"simulation-open-{session_id}",
-        use_container_width=True,
-        ):
-            _simulation_action("start_gui", session_id)
-        if controls[1].button(
-        "让机器人走一遍",
-        disabled=not visual["gazebo_gui_running"] or active is not None,
-        key=f"simulation-motion-{session_id}",
-        type="primary",
-        use_container_width=True,
-        ):
-            _simulation_action("run_motion", session_id)
-        has_capture = bool(session.get("simulation_capture_operation_ids"))
-        if st.button(
-            "用当前项目观测机器人",
-            disabled=(
-                not visual["gazebo_gui_running"]
-                or active is not None
-                or not has_capture
-                or not bool((session.get("repository") or {}).get("available"))
-            ),
-            key=f"simulation-project-motion-{session_id}",
-            type="primary",
-            use_container_width=True,
-        ):
-            _simulation_action("run_project_observation", session_id)
-        st.caption("项目观测会把本会话刚采集的 RGB-D 输入当前代码，再让机器人走向代码给出的目标。")
-        if controls[0].button(
-        "采集相机与距离",
-        disabled=active is not None,
-        key=f"simulation-capture-{session_id}",
-        use_container_width=True,
-        ):
-            _simulation_action("capture_rgbd", session_id)
-        if controls[1].button(
-        "关闭现场",
-        disabled=not visual["gazebo_gui_running"],
-        key=f"simulation-stop-{session_id}",
-        use_container_width=True,
-        ):
-            _simulation_action("stop", session_id)
-        if st.button("同步状态", key=f"simulation-refresh-{session_id}"):
-            st.rerun()
-        latest = status.get("latest_operation") or {}
-        if active:
-            st.info("仿真正在执行；刷新后会显示最新结果。")
-        elif latest.get("status") == "FAILED":
-            st.error("最近一次仿真操作没有完成。")
-            st.caption(str(latest.get("error") or "未返回具体原因"))
-        elif latest.get("action") == "run_motion" and latest.get("result"):
-            result = latest["result"]
-            st.success("机器人固定动作已完成。")
-            st.caption(
-                f"到位偏差 {float(result.get('tcp_translation_error_m', 0)) * 1000:.2f} mm · "
-                f"方向偏差 {float(result.get('tcp_rotation_error_rad', 0)) * 57.2958:.2f}°"
-            )
-        elif latest.get("action") == "run_project_observation" and latest.get("result"):
-            result = latest["result"]
-            st.success("机器人已走到当前项目计算出的目标位置。")
-            target = result.get("project_target_tcp") or {}
-            position = target.get("position") or (0.0, 0.0, 0.0)
-            st.caption(
-                "项目目标位置 "
-                f"x={float(position[0]):.3f} m · y={float(position[1]):.3f} m · "
-                f"z={float(position[2]):.3f} m"
-            )
-        elif latest.get("action") == "capture_rgbd" and latest.get("result"):
-            operation_id = str(latest.get("operation_id") or "")
-            attached_ids = set(session.get("simulation_capture_operation_ids") or ())
-            belongs_to_session = latest.get("case_id") == f"scene-{session_id[-6:]}"
-            if belongs_to_session and operation_id and operation_id not in attached_ids:
-                with st.spinner("正在把现场采集同步到当前会话……"):
-                    attached = _post(
-                        f"/api/v1/sessions/{session_id}/simulation-capture", {}
-                    )
-                if attached:
-                    st.rerun()
-            if belongs_to_session:
-                st.success("相机采集已同步到当前会话。")
-            else:
-                st.caption("最近的采集属于另一诊断会话。")
-            result = latest["result"]
-            st.caption(
-                f"有效距离像素 {float(result.get('depth_valid_ratio', 0)) * 100:.1f}% · "
-                f"目标位置偏差 "
-                f"{float(result.get('rgbd_translation_error_m', 0)) * 1000:.2f} mm"
-            )
 
 
 def main() -> None:

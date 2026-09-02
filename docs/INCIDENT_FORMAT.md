@@ -1,4 +1,9 @@
-# External incident contract
+# External incident contract（历史基准）
+
+> 此合同属于 `6e5785e095b14564e0d7fa4d44547ca949adb3bc` 的旧外部修复路径，要求预先提供
+> 好/坏提交、案例和独立 QA reference。重构中的入口是 Case + ObservationBundle，不以本合同为目标；
+> 详见 [`../design/architecture.md`](../design/architecture.md) 和
+> [`../design/implementation.md`](../design/implementation.md)。本文仅在迁移旧路径时参考。
 
 `visiondoctor run` never creates a repository, dataset, fault, diagnosis, or patch. The caller
 supplies an `Incident` JSON that points to an existing local Git repository and separately

@@ -1,0 +1,19 @@
+{
+  "schema_version": "pick-a17-vision/v1",
+  "run_id": "run-20260902-0640",
+  "part_id": "A",
+  "detection_id": "camera-frame-A",
+  "detected_part_in_camera": {
+    "position": [
+      0.05,
+      0.26,
+      0.105
+    ],
+    "quaternion_xyzw": [
+      0.0,
+      0.0,
+      0.124675,
+      0.992198
+    ]
+  }
+}

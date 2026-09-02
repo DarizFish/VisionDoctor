@@ -26,7 +26,7 @@ from visiondoctor.llm import (
 )
 from visiondoctor.llm.tools import terminal_tool
 from visiondoctor.multimodal import (
-    OllamaVisionGateway,
+    OpenAIVisionGateway,
     VisionGateway,
     VisionSettings,
 )
@@ -1225,7 +1225,7 @@ class DiagnosisSessionService:
         ]
         if not images:
             return []
-        gateway = self.vision_gateway or OllamaVisionGateway(
+        gateway = self.vision_gateway or OpenAIVisionGateway(
             VisionSettings.from_environment(),
             audit_path=self._root(session_id) / "vision_model_audit.jsonl",
         )

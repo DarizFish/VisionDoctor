@@ -13,6 +13,10 @@
 
 **代码改不改、上不上线，始终由你决定。VisionDoctor 从不自动合并任何变更。**
 
+> 重构计划（尚未实现）：从证据驱动的机器视觉系统诊断重新推进，目标架构、实施顺序和当前状态分别见
+> [`design/architecture.md`](design/architecture.md)、[`design/implementation.md`](design/implementation.md)
+> 和 [`design/PROGRESS.md`](design/PROGRESS.md)。本文其余内容描述该基准版本的现有能力。
+
 ---
 
 ## 目录
