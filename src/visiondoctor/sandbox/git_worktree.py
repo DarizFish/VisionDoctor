@@ -4,9 +4,12 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from visiondoctor.adapters.base import RuntimeHandle
 from visiondoctor.schemas import CandidateVersion
+
+if TYPE_CHECKING:  # pragma: no cover - importing the package here would cycle
+    from visiondoctor.adapters.base import RuntimeHandle
 
 
 class SandboxError(RuntimeError):
@@ -59,6 +62,9 @@ class GitWorktreeSandbox:
         self._repository_status = _git(self.repository, "status", "--porcelain").stdout
 
     def create(self, candidate: CandidateVersion) -> RuntimeHandle:
+        # Imported here: the adapters package pulls sandbox back in at module scope.
+        from visiondoctor.adapters.base import RuntimeHandle
+
         safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "-", candidate.candidate_id)
         worktree = (self.sandbox_root / safe_name).resolve()
         if self.sandbox_root not in worktree.parents:

@@ -25,6 +25,7 @@ from visiondoctor.case import (
 )
 from visiondoctor.environment import FileBundleAdapter
 from visiondoctor.investigation import Investigation, Toolbox, build_view
+from visiondoctor.repair import ProjectBinding, recheck, replay
 
 BUNDLE = Path(__file__).parent / "fixtures" / "pick-a17-observation"
 
@@ -133,3 +134,86 @@ def test_a_conclusion_cannot_cite_evidence_the_host_never_delivered() -> None:
             ),
             next_step="无",
         )
+
+
+def _tiny_project(root: Path) -> str:
+    """A two-commit project whose replay entry prints a number the patch changes."""
+
+    import subprocess
+
+    root.mkdir(parents=True)
+    run = lambda *args: subprocess.run(  # noqa: E731 - local shorthand
+        ["git", "-C", str(root), *args], check=True, capture_output=True
+    )
+    run("init", "--initial-branch=main")
+    run("config", "user.email", "cell@example.invalid")
+    run("config", "user.name", "Cell")
+    (root / "compute.py").write_text(
+        'import json, sys\n'
+        'value = {"offset": 1}\n'
+        'json.dump(value, open(sys.argv[2], "w"))\n',
+        encoding="utf-8",
+    )
+    run("add", "-A")
+    run("commit", "-m", "baseline")
+    return subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+
+def test_a_candidate_is_replayed_in_isolation_on_recorded_input(tmp_path: Path) -> None:
+    import sys
+
+    repository = tmp_path / "project"
+    revision = _tiny_project(repository)
+    binding = ProjectBinding(
+        repository=repository,
+        revision=revision,
+        replay_command=(sys.executable, "compute.py", "{input}", "{output}"),
+    )
+    patch = (
+        "diff --git a/compute.py b/compute.py\n"
+        "--- a/compute.py\n"
+        "+++ b/compute.py\n"
+        "@@ -1,3 +1,3 @@\n"
+        " import json, sys\n"
+        '-value = {"offset": 1}\n'
+        '+value = {"offset": 2}\n'
+        ' json.dump(value, open(sys.argv[2], "w"))\n'
+    )
+    outcome = replay(
+        binding=binding,
+        patch_text=patch,
+        candidate_id="CAND-1",
+        sandbox_root=tmp_path / "sandbox",
+        inputs={"A": b"{}"},
+    )
+    assert outcome.changed_files == ("compute.py",)
+    assert outcome.replays[0]["output"] == {"offset": 2}
+    # The worktree is gone; the bound repository never saw the candidate.
+    assert not (repository / ".replay").exists()
+    assert (repository / "compute.py").read_text(encoding="utf-8").count('"offset": 1') == 1
+
+
+def test_only_evidence_collected_after_the_change_can_say_the_site_recovered() -> None:
+    from datetime import timedelta
+
+    before = FileBundleAdapter(BUNDLE).collect()
+    passing = before.model_copy(
+        update={
+            "run_id": "run-after",
+            "created_at": before.created_at + timedelta(hours=1),
+            "results": tuple(
+                item.model_copy(update={"success": True, "classification": "within_tolerance"})
+                for item in before.results
+            ),
+        }
+    )
+    applied = before.created_at + timedelta(minutes=30)
+    assert recheck(before=before, after=passing, applied_at=None).scope == "not_a_recheck"
+    assert recheck(before=before, after=passing, applied_at=applied).scope == "site_recovered"
+    still_bad = before.model_copy(
+        update={"run_id": "run-again", "created_at": before.created_at + timedelta(hours=1)}
+    )
+    assert recheck(before=before, after=still_bad, applied_at=applied).scope == "site_still_failing"
