@@ -93,6 +93,10 @@ def create_case_app(service: CaseService | None = None) -> FastAPI:
             [item.model_dump() for item in body.files],
         )
 
+    @app.get("/api/v1/cases/{case_id}/evidence/{evidence_id}")
+    def evidence_content(case_id: str, evidence_id: str) -> dict[str, Any]:
+        return guard(cases.evidence_content, case_id, evidence_id)
+
     @app.post("/api/v1/cases/{case_id}/project")
     def bind(case_id: str, body: Project) -> dict[str, Any]:
         return guard(

@@ -4,6 +4,7 @@ from .case import Case, Evidence
 from .chain import (
     CORE_SEGMENTS,
     GUIDED_SEGMENTS,
+    SEGMENT_NAME,
     SEGMENT_SCOPE,
     Hypothesis,
     Segment,
@@ -18,6 +19,7 @@ from .service import CaseRecord, CaseService
 __all__ = [
     "CORE_SEGMENTS",
     "GUIDED_SEGMENTS",
+    "SEGMENT_NAME",
     "SEGMENT_SCOPE",
     "ApprovalRecord",
     "Case",

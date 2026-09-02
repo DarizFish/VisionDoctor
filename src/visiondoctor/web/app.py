@@ -50,7 +50,7 @@ def _apply_style() -> None:
     st.markdown(
         """
         <style>
-        .block-container {padding-top: 2rem; max-width: 1500px;}
+        .block-container {padding-top: 2rem; max-width: 1600px;}
         [data-testid="stSidebar"] {border-right: 1px solid rgba(120,120,120,.16);}
         [data-testid="stChatMessage"] {border-radius: 16px; padding: .45rem .8rem;}
         .vd-kicker {display: block; min-height: 1.4rem; font-size: .78rem; line-height: 1.45;
@@ -146,6 +146,30 @@ def _render_calls(calls: list[dict[str, Any]]) -> None:
         st.caption("工具由宿主执行并记账。模型自称检查过而没有调用的，不能作为证据引用。")
 
 
+@st.cache_data(show_spinner=False)
+def _evidence_bytes(case_id: str, evidence_id: str) -> bytes | None:
+    import base64
+
+    try:
+        payload = _api(f"/api/v1/cases/{case_id}/evidence/{evidence_id}")
+    except (RuntimeError, urllib.error.URLError):
+        return None
+    return base64.b64decode(payload["content_base64"])
+
+
+def _render_files(files: list[dict[str, Any]]) -> None:
+    pictures = [item for item in files if str(item.get("media_type", "")).startswith("image/")]
+    others = [item for item in files if item not in pictures]
+    if pictures:
+        columns = st.columns(min(len(pictures), 3))
+        for column, item in zip(columns, pictures, strict=False):
+            payload = _evidence_bytes(st.session_state.selected_case, item["evidence_id"])
+            if payload is not None:
+                column.image(payload, caption=f"{item['name']} · {item['evidence_id']}")
+    for item in others:
+        st.caption(f"　📄 {item['name']} · {item['evidence_id']}")
+
+
 def _render_messages(view: dict[str, Any]) -> None:
     messages = view.get("messages") or []
     if not messages:
@@ -158,6 +182,7 @@ def _render_messages(view: dict[str, Any]) -> None:
     for message in messages:
         if message["role"] == "source":
             st.caption(f"📥 {message['content']} · {message.get('detail', '')}")
+            _render_files(message.get("files") or [])
             continue
         with st.chat_message(message["role"]):
             st.markdown(str(message.get("content", "")))
@@ -202,17 +227,17 @@ def _render_composer(case_id: str, view: dict[str, Any]) -> None:
         key=f"uploads-{nonce}",
         help="图片交给视觉模型逐张观察；日志、JSON、CSV 直接读取文字。",
     )
-    st.caption(
-        "上传的材料会登记为证据，但只有诊断助手真的读过才算数——右侧证据清单里会标出来。"
+    directory = st.text_input(
+        "或附上一次运行的观察证据包（目录路径）",
+        key="bundle-dir",
+        placeholder=".runtime/gazebo-pick-cell/exports/run-…",
     )
-    with st.expander("附上一次观察证据包", expanded=not view.get("observation")):
-        st.caption("证据包是产品认识现场的唯一入口：它只读清单里登记的工件，不直接连相机或机器人。")
-        directory = st.text_input("证据包目录", key="bundle-dir", label_visibility="collapsed")
-        attach = st.button("附上", use_container_width=True) and directory.strip()
-        if attach and _post(
-            f"/api/v1/cases/{case_id}/observations", {"directory": directory}
-        ):
-            st.rerun()
+    attach = st.button("附上证据包", use_container_width=True) and directory.strip()
+    if attach and _post(f"/api/v1/cases/{case_id}/observations", {"directory": directory}):
+        st.rerun()
+    st.caption(
+        "材料都会登记为证据，但只有诊断助手真的读过才算数——右侧证据清单里会标出来。"
+    )
     prompt = st.chat_input("描述现象、回答问题，或告诉诊断助手接下来要检查什么……")
     if prompt is None:
         return
@@ -293,7 +318,7 @@ def _render_chain(view: dict[str, Any]) -> None:
         evidence = "　".join(row["evidence_ids"])
         st.markdown(
             f'<div class="vd-seg vd-seg-{row["status"]}">'
-            f'<b>{STATUS_MARK[row["status"]]} {row["segment"]}</b> '
+            f'<b>{STATUS_MARK[row["status"]]} {row.get("name") or row["segment"]}</b> '
             f'<span class="vd-scope">{STATUS_LABEL[row["status"]]}</span>'
             f'<div class="vd-scope">{html.escape(note)}</div>'
             + (f'<div class="vd-scope">证据 {html.escape(evidence)}</div>' if evidence else "")
@@ -308,7 +333,8 @@ def _render_hypotheses(view: dict[str, Any]) -> None:
     st.markdown("### 当前假设")
     for item in view["hypotheses"]:
         with st.container(border=True):
-            st.markdown(f"**{item['hypothesis_id']} · {item['target_segment']}**")
+            label = item.get("segment_name") or item["target_segment"]
+            st.markdown(f"**{item['hypothesis_id']} · {label}**")
             st.markdown(item["statement"])
             st.caption("证据 " + "　".join(item["evidence_ids"]))
 
@@ -420,7 +446,7 @@ def main() -> None:
         )
         return
     view = _api(f"/api/v1/cases/{case_id}")
-    conversation, side = st.columns([1.35, 1], gap="large")
+    conversation, side = st.columns([2, 1], gap="large")
     with conversation:
         st.markdown('<div class="vd-kicker">诊断会话</div>', unsafe_allow_html=True)
         st.markdown(

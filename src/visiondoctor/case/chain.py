@@ -42,6 +42,17 @@ GUIDED_SEGMENTS: tuple[Segment, ...] = (
 )
 
 
+SEGMENT_NAME: dict[Segment, str] = {
+    Segment.PART_SUPPLY: "工件与来料",
+    Segment.IMAGING: "光学成像",
+    Segment.ACQUISITION: "采集与时间链路",
+    Segment.ALGORITHM: "视觉算法",
+    Segment.TASK_RESULT: "任务结果",
+    Segment.CALIBRATION: "标定配置",
+    Segment.INTERFACE: "变换接口",
+    Segment.ROBOT: "机器人侧",
+}
+
 #: What each segment covers.  A map is only shared if both sides read it the
 #: same way; these say what a segment is responsible for, never what is wrong
 #: with any particular cell.

@@ -12,7 +12,7 @@ from visiondoctor.environment import FileBundleAdapter, ObservationBundle
 from visiondoctor.repair import ProjectBinding, Recheck, recheck
 
 from .case import Case, Evidence
-from .chain import SEGMENT_SCOPE
+from .chain import SEGMENT_NAME, SEGMENT_SCOPE
 from .gates import approval_gate, diagnosis_gate
 from .repair import ApprovalRecord, RepairPlan
 
@@ -109,15 +109,34 @@ class CaseService:
             # Handed-in material counts as delivered only once it is read.
             record.case.examined.discard(evidence.evidence_id)
             record.uploads[evidence.evidence_id] = path
-            admitted.append({"evidence_id": evidence.evidence_id, "name": name})
+            admitted.append(
+                {
+                    "evidence_id": evidence.evidence_id,
+                    "name": name,
+                    "media_type": evidence.media_type,
+                }
+            )
         record.messages.append(
             {
                 "role": "source",
-                "content": "补充材料 " + "、".join(item["name"] for item in admitted),
+                "content": "补充材料",
                 "detail": f"{len(admitted)} 份，已登记为证据待查阅",
+                "files": admitted,
             }
         )
         return {"admitted": admitted}
+
+    def evidence_content(self, case_id: str, evidence_id: str) -> dict[str, Any]:
+        """Hand back a handed-in file so the conversation can show it again."""
+
+        record = self.record(case_id)
+        path = record.uploads.get(evidence_id)
+        if path is None or not path.is_file():
+            raise KeyError(f"没有可显示的材料：{evidence_id}")
+        return {
+            "evidence_id": evidence_id,
+            "content_base64": base64.b64encode(path.read_bytes()).decode("ascii"),
+        }
 
     def bind_project(
         self,
@@ -241,7 +260,13 @@ class CaseService:
             "project": self._project(case),
             "chain": self._chain(case),
             "messages": record.messages,
-            "hypotheses": [item.model_dump(mode="json") for item in case.hypotheses],
+            "hypotheses": [
+                {
+                    **item.model_dump(mode="json"),
+                    "segment_name": SEGMENT_NAME[item.target_segment],
+                }
+                for item in case.hypotheses
+            ],
             "evidence": [
                 {
                     "evidence_id": item.evidence_id,
@@ -292,6 +317,7 @@ class CaseService:
             rows.append(
                 {
                     "segment": segment.value,
+                    "name": SEGMENT_NAME[segment],
                     "status": status.value,
                     "scope": SEGMENT_SCOPE[segment],
                     "note": finding.note if finding else "",
@@ -307,7 +333,7 @@ class CaseService:
             rows.append(
                 {
                     "plan_id": plan.plan_id,
-                    "target_segment": plan.target_segment.value,
+                    "target_segment": SEGMENT_NAME[plan.target_segment],
                     "frozen_hash": plan.frozen_hash,
                     "diff": plan.diff,
                     "approved": decision.approved if decision else None,
