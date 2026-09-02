@@ -9,6 +9,7 @@ actually came back.  The ledger answers "what was checked", not "what was said".
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -46,11 +47,19 @@ class DecisionTurn(BaseModel):
 class Investigation:
     """The host side of one turn: it runs the tools and keeps the ledger."""
 
-    def __init__(self, case: Case, toolbox: Toolbox, prompt: str) -> None:
+    def __init__(
+        self,
+        case: Case,
+        toolbox: Toolbox,
+        prompt: str,
+        observer: Callable[[ToolCall], None] | None = None,
+    ) -> None:
         self.case = case
         self.toolbox = toolbox
         self.prompt = prompt
         self.calls: list[ToolCall] = []
+        #: Told about each call as it lands, so a viewer can watch it happen.
+        self.observer = observer
         self._committed = False
 
     def invoke(self, name: str, **arguments: Any) -> Any:
@@ -63,20 +72,21 @@ class Investigation:
             raise KeyError(f"{name} is not on the investigation surface")
         before = set(self.case.examined)
         result = tool(**arguments)
-        self.calls.append(
-            ToolCall(
-                name=name,
-                arguments=arguments,
-                at=datetime.now(UTC),
-                requested=tuple(
-                    str(value)
-                    for key, value in arguments.items()
-                    if key.endswith("_evidence_id") and value
-                )
-                or tuple(str(item) for item in arguments.get("evidence_ids") or ()),
-                delivered=tuple(sorted(self.case.examined - before)),
+        recorded = ToolCall(
+            name=name,
+            arguments=arguments,
+            at=datetime.now(UTC),
+            requested=tuple(
+                str(value)
+                for key, value in arguments.items()
+                if key.endswith("_evidence_id") and value
             )
+            or tuple(str(item) for item in arguments.get("evidence_ids") or ()),
+            delivered=tuple(sorted(self.case.examined - before)),
         )
+        self.calls.append(recorded)
+        if self.observer is not None:
+            self.observer(recorded)
         return result
 
     def commit(

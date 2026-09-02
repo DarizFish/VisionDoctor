@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,6 +26,8 @@ class CaseRecord:
     turns: list[Any] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
     uploads: dict[str, Path] = field(default_factory=dict)
+    #: The turn in flight, so a viewer can watch it work.
+    running: dict[str, Any] | None = None
     approvals: dict[str, ApprovalRecord] = field(default_factory=dict)
     applied_at: datetime | None = None
     recheck: Recheck | None = None
@@ -160,25 +163,47 @@ class CaseService:
     # ---- pushing it forward ------------------------------------------------------
 
     def run_turn(self, case_id: str, prompt: str) -> dict[str, Any]:
-        from visiondoctor.investigation import investigate
-        from visiondoctor.llm import ModelSettings, OpenAICompatibleGateway
+        """Start a turn and return at once; the work is watched, not waited on."""
 
         record = self.record(case_id)
         if record.bundle is None and not record.uploads:
             raise ValueError("这个案件还没有任何材料：先附上证据包或上传图片、日志")
-        turn = investigate(
-            case=record.case,
-            adapter=record.adapter,
-            bundle=record.bundle,
-            prompt=prompt,
-            gateway=OpenAICompatibleGateway(ModelSettings.from_environment()),
-            vision=_vision_gateway(),
-            uploads=record.uploads,
-        )
-        record.turns.append(turn)
+        if record.running is not None:
+            raise ValueError("这个案件正在推进中，等这一轮结束再说下一句")
         if record.case.title == "新的诊断":
             record.case.title = prompt[:24]
         record.messages.append({"role": "user", "content": prompt})
+        record.running = {"prompt": prompt, "calls": [], "error": None}
+        thread = threading.Thread(
+            target=self._work, args=(case_id, prompt), daemon=True
+        )
+        thread.start()
+        return {"started": True, "prompt": prompt}
+
+    def _work(self, case_id: str, prompt: str) -> None:
+        from visiondoctor.investigation import investigate
+
+        record = self.record(case_id)
+        try:
+            turn = investigate(
+                case=record.case,
+                adapter=record.adapter,
+                bundle=record.bundle,
+                prompt=prompt,
+                gateway=_model_gateway(),
+                vision=_vision_gateway(),
+                uploads=record.uploads,
+                observer=lambda call: record.running["calls"].append(
+                    _call_summary(call)
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - the viewer needs the reason
+            record.running = None
+            record.messages.append(
+                {"role": "assistant", "content": f"这一轮没有走完：{exc}", "calls": []}
+            )
+            return
+        record.turns.append(turn)
         record.messages.append(
             {
                 "role": "assistant",
@@ -190,18 +215,10 @@ class CaseService:
                     if item.status.value != "untested"
                 ],
                 "hypotheses": [item.statement for item in turn.hypotheses],
-                "calls": [
-                    {"name": call.name, "delivered": list(call.delivered),
-                     "requested": list(call.requested),
-                     "arguments": {
-                         key: (value if len(str(value)) < 200 else str(value)[:200] + "…")
-                         for key, value in call.arguments.items()
-                     }}
-                    for call in turn.calls
-                ],
+                "calls": [_call_summary(call) for call in turn.calls],
             }
         )
-        return turn.model_dump(mode="json")
+        record.running = None
 
     def approve(
         self, case_id: str, plan_id: str, approver: str, *, approved: bool
@@ -283,6 +300,7 @@ class CaseService:
             },
             "plans": self._plans(record),
             "turns": [turn.model_dump(mode="json") for turn in record.turns],
+            "running": record.running,
             "applied_at": record.applied_at.isoformat() if record.applied_at else None,
             "recheck": record.recheck.as_dict() if record.recheck else None,
         }
@@ -364,3 +382,21 @@ def _vision_gateway():
         return OpenAIVisionGateway(VisionSettings.from_environment())
     except VisionConfigurationError:
         return None
+
+
+def _call_summary(call: Any) -> dict[str, Any]:
+    return {
+        "name": call.name,
+        "requested": list(call.requested),
+        "delivered": list(call.delivered),
+        "arguments": {
+            key: (value if len(str(value)) < 200 else str(value)[:200] + "…")
+            for key, value in call.arguments.items()
+        },
+    }
+
+
+def _model_gateway():
+    from visiondoctor.llm import ModelSettings, OpenAICompatibleGateway
+
+    return OpenAICompatibleGateway(ModelSettings.from_environment())

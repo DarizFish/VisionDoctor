@@ -131,21 +131,42 @@ def _render_sidebar(cases: list[dict[str, Any]]) -> str | None:
 # ---- conversation ------------------------------------------------------------------
 
 
-def _render_calls(calls: list[dict[str, Any]]) -> None:
+def _describe_call(call: dict[str, Any], names: dict[str, str]) -> tuple[str, str]:
+    """Say what the host did, the way a person would say it."""
+
+    arguments = call.get("arguments") or {}
+    listed = "、".join(
+        f"{item} {names.get(item, '')}".strip() for item in (call.get("requested") or ())
+    )
+    if call["name"] == "read_evidence":
+        return f"读取了 {listed or '若干证据'}", ""
+    if call["name"] == "check_transform_chain":
+        return "重算了声明的变换链", f"用到 {listed}" if listed else ""
+    if call["name"] == "list_source":
+        return "列出了项目在该提交下的源码文件", ""
+    if call["name"] == "read_source":
+        return f"读取源码 {arguments.get('path', '')}", "读的是绑定提交下的那一份"
+    if call["name"] == "propose_repair":
+        return (
+            f"提交候选修复 {arguments.get('path', '')}",
+            str(arguments.get("rationale") or ""),
+        )
+    return call["name"], listed
+
+
+def _render_calls(calls: list[dict[str, Any]], names: dict[str, str]) -> None:
     if not calls:
         return
     with st.expander(f"这一轮做了什么 · {len(calls)} 次工具调用", expanded=False):
         for index, call in enumerate(calls):
-            asked = "、".join(call.get("requested") or ()) or "—"
-            first = "、".join(call["delivered"]) or "此前已读过"
-            st.markdown(f"**{index + 1}. `{call['name']}`** · 请求 {asked}")
-            st.caption(f"本轮首次交付：{first}")
-            if call["arguments"]:
-                st.caption(
-                    "　".join(f"{name}={value}" for name, value in call["arguments"].items())
-                )
+            headline, detail = _describe_call(call, names)
+            st.markdown(f"**{index + 1}.** {headline}")
+            first = "、".join(call["delivered"])
+            parts = [detail, f"本轮首次读到 {first}" if first else ""]
+            note = "；".join(part for part in parts if part)
+            if note:
+                st.caption(note)
         st.caption("工具由宿主执行并记账。模型自称检查过而没有调用的，不能作为证据引用。")
-
 
 @st.cache_data(show_spinner=False)
 def _evidence_bytes(case_id: str, evidence_id: str) -> bytes | None:
@@ -169,6 +190,29 @@ def _render_files(case_id: str, files: list[dict[str, Any]]) -> None:
                 column.image(payload, caption=f"{item['name']} · {item['evidence_id']}")
     for item in others:
         st.caption(f"　📄 {item['name']} · {item['evidence_id']}")
+
+
+@st.fragment(run_every="1.5s")
+def _render_running(case_id: str) -> None:
+    try:
+        view = _api(f"/api/v1/cases/{case_id}")
+    except (RuntimeError, urllib.error.URLError):
+        return
+    running = view.get("running")
+    if not running:
+        st.rerun()
+        return
+    names = {
+        item["evidence_id"]: item["reference"].rsplit("/", maxsplit=1)[-1]
+        for item in view.get("evidence") or ()
+    }
+    with st.chat_message("assistant"), st.status("正在查看你提供的材料……", expanded=True):
+        st.caption("工具调用由宿主执行并记账。")
+        for index, call in enumerate(running["calls"]):
+            headline, detail = _describe_call(call, names)
+            st.markdown(f"**{index + 1}.** {headline}")
+            if detail:
+                st.caption(detail)
 
 
 def _render_messages(case_id: str, view: dict[str, Any]) -> None:
@@ -223,27 +267,25 @@ def _encode(files: list[Any]) -> list[dict[str, str]]:
     return encoded
 
 
-def _render_uploads(case_id: str, view: dict[str, Any]) -> None:
-    del view
+def _render_uploads(case_id: str) -> None:
     nonce = int(st.session_state.get("upload_nonce", 0))
-    files = st.file_uploader(
-        "补充图片或文件",
-        type=tuple(MEDIA_TYPES),
-        accept_multiple_files=True,
-        key=f"uploads-{nonce}",
-        help="图片交给视觉模型逐张观察；日志、JSON、CSV 直接读取文字。",
-    )
-    directory = st.text_input(
-        "或附上一次运行的观察证据包（目录路径）",
-        key="bundle-dir",
-        placeholder=".runtime/gazebo-pick-cell/exports/run-…",
-    )
-    attach = st.button("附上证据包", use_container_width=True) and directory.strip()
-    if attach and _post(f"/api/v1/cases/{case_id}/observations", {"directory": directory}):
-        st.rerun()
-    st.caption(
-        "材料都会登记为证据，但只有诊断助手真的读过才算数——右侧证据清单里会标出来。"
-    )
+    with st.popover("＋ 附加材料", use_container_width=False):
+        files = st.file_uploader(
+            "图片、日志、JSON、CSV",
+            type=tuple(MEDIA_TYPES),
+            accept_multiple_files=True,
+            key=f"uploads-{nonce}",
+            help="图片交给视觉模型逐张观察；日志、JSON、CSV 直接读取文字。",
+        )
+        directory = st.text_input(
+            "或一次运行的观察证据包（目录路径）",
+            key="bundle-dir",
+            placeholder=".runtime/gazebo-pick-cell/exports/run-…",
+        )
+        attach = st.button("附上证据包") and directory.strip()
+        if attach and _post(f"/api/v1/cases/{case_id}/observations", {"directory": directory}):
+            st.rerun()
+        st.caption("材料都会登记为证据，但只有诊断助手真的读过才算数。")
     st.session_state.pending_uploads = _encode(list(files or ()))
     st.session_state.upload_nonce_value = nonce
 
@@ -254,9 +296,8 @@ def _submit(case_id: str, prompt: str) -> None:
         return
     st.session_state.upload_nonce = int(st.session_state.get("upload_nonce_value", 0)) + 1
     st.session_state.pending_uploads = []
-    with st.spinner("诊断助手正在查看你提供的材料……工具调用由宿主执行并记账"):
-        if _post(f"/api/v1/cases/{case_id}/turns", {"prompt": prompt}):
-            st.rerun()
+    if _post(f"/api/v1/cases/{case_id}/turns", {"prompt": prompt}):
+        st.rerun()
 
 
 # ---- right column ------------------------------------------------------------------
@@ -490,7 +531,8 @@ def main() -> None:
         )
         st.write("")
         _render_messages(case_id, view)
-        _render_uploads(case_id, view)
+        if view.get("running"):
+            _render_running(case_id)
     with side, st.container(height=720, border=False):
         _render_banner(view)
         _render_chain(view)
@@ -499,6 +541,7 @@ def main() -> None:
         _render_recheck(case_id, view)
         _render_evidence(view)
         _render_connections(case_id, view)
+    _render_uploads(case_id)
     prompt = st.chat_input("描述现象、回答问题，或告诉诊断助手接下来要检查什么……")
     if prompt:
         _submit(case_id, prompt)

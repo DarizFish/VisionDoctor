@@ -9,6 +9,7 @@ they cite came back through the host.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -86,11 +87,12 @@ def investigate(
     vision: VisionGateway | None = None,
     sandbox_root: Path | None = None,
     uploads: dict[str, Path] | None = None,
+    observer: Callable[[Any], None] | None = None,
 ) -> DecisionTurn:
     """Let the model push the case one turn, and keep the ledger while it does."""
 
     toolbox = Toolbox(case, adapter, bundle, vision, sandbox_root, uploads)
-    turn = Investigation(case, toolbox, prompt)
+    turn = Investigation(case, toolbox, prompt, observer)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
