@@ -172,6 +172,10 @@ def _render_files(case_id: str, files: list[dict[str, Any]]) -> None:
 
 
 def _render_messages(case_id: str, view: dict[str, Any]) -> None:
+    names = {
+        item["evidence_id"]: item["reference"].rsplit("/", maxsplit=1)[-1]
+        for item in view.get("evidence") or ()
+    }
     messages = view.get("messages") or []
     if not messages:
         st.info("先说说发生了什么。你不需要整理成表单，也不需要判断是哪次代码改动出了问题。")
@@ -193,7 +197,7 @@ def _render_messages(case_id: str, view: dict[str, Any]) -> None:
                 st.caption("本轮判定：" + "　".join(message["findings"]))
             for statement in message.get("hypotheses") or ():
                 st.markdown(f"- {statement}")
-            _render_calls(list(message.get("calls") or ()))
+            _render_calls(list(message.get("calls") or ()), names)
 
 
 MEDIA_TYPES = {
@@ -219,7 +223,8 @@ def _encode(files: list[Any]) -> list[dict[str, str]]:
     return encoded
 
 
-def _render_composer(case_id: str, view: dict[str, Any]) -> None:
+def _render_uploads(case_id: str, view: dict[str, Any]) -> None:
+    del view
     nonce = int(st.session_state.get("upload_nonce", 0))
     files = st.file_uploader(
         "补充图片或文件",
@@ -239,13 +244,16 @@ def _render_composer(case_id: str, view: dict[str, Any]) -> None:
     st.caption(
         "材料都会登记为证据，但只有诊断助手真的读过才算数——右侧证据清单里会标出来。"
     )
-    prompt = st.chat_input("描述现象、回答问题，或告诉诊断助手接下来要检查什么……")
-    if prompt is None:
-        return
-    uploads = _encode(list(files or ()))
+    st.session_state.pending_uploads = _encode(list(files or ()))
+    st.session_state.upload_nonce_value = nonce
+
+
+def _submit(case_id: str, prompt: str) -> None:
+    uploads = st.session_state.get("pending_uploads") or []
     if uploads and not _post(f"/api/v1/cases/{case_id}/attachments", {"files": uploads}):
         return
-    st.session_state.upload_nonce = nonce + 1
+    st.session_state.upload_nonce = int(st.session_state.get("upload_nonce_value", 0)) + 1
+    st.session_state.pending_uploads = []
     with st.spinner("诊断助手正在查看你提供的材料……工具调用由宿主执行并记账"):
         if _post(f"/api/v1/cases/{case_id}/turns", {"prompt": prompt}):
             st.rerun()
@@ -255,8 +263,16 @@ def _render_composer(case_id: str, view: dict[str, Any]) -> None:
 
 
 def _render_connections(case_id: str, view: dict[str, Any]) -> None:
-    st.markdown("### 当前连接")
     observation = view.get("observation")
+    label = "当前连接" if (observation or view.get("project")) else "连接项目仓库"
+    expander = st.expander(label, expanded=not (observation or view.get("project")))
+    with expander:
+        _connections_body(case_id, view, observation)
+
+
+def _connections_body(
+    case_id: str, view: dict[str, Any], observation: dict[str, Any] | None
+) -> None:
     if observation:
         results = "　".join(
             f"{item['part_id']}：{'成功' if item['success'] else item['classification']}"
@@ -304,6 +320,21 @@ def _render_connections(case_id: str, view: dict[str, Any]) -> None:
             )
             if posted:
                 st.rerun()
+
+
+def _render_banner(view: dict[str, Any]) -> None:
+    observation = view.get("observation")
+    if not observation:
+        st.caption("尚未接入观察证据包，诊断助手只能看你直接交上来的材料。")
+        return
+    results = "　".join(
+        f"{item['part_id']} {'成功' if item['success'] else '失败'}"
+        for item in observation["results"]
+    )
+    st.caption(
+        f"观察 {observation['run_id'][:26]} · {observation['artifacts']} 件工件"
+        + (f" · {results}" if results else "")
+    )
 
 
 def _render_chain(view: dict[str, Any]) -> None:
@@ -459,14 +490,18 @@ def main() -> None:
         )
         st.write("")
         _render_messages(case_id, view)
-        _render_composer(case_id, view)
-    with side:
-        _render_connections(case_id, view)
+        _render_uploads(case_id, view)
+    with side, st.container(height=720, border=False):
+        _render_banner(view)
         _render_chain(view)
         _render_hypotheses(view)
-        _render_evidence(view)
         _render_plans(case_id, view)
         _render_recheck(case_id, view)
+        _render_evidence(view)
+        _render_connections(case_id, view)
+    prompt = st.chat_input("描述现象、回答问题，或告诉诊断助手接下来要检查什么……")
+    if prompt:
+        _submit(case_id, prompt)
 
 
 main()

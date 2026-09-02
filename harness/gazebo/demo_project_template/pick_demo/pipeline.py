@@ -17,12 +17,8 @@ def derive_desired_tcp(
 def flange_command_for_tcp(desired_tcp_in_base: Pose, tool0_to_tcp: Pose) -> Pose:
     """Return the tool0 command used by the robot controller.
 
-    The current revision is deliberately the regression under demonstration:
-    it repeats the reverse TCP compensation twice after applying it once.
-
-    The top-down cell therefore reaches a stable pose roughly 70 mm above
-    the part instead of driving the fault target into the low fixture.  The
-    normal parent revision contains the one correct inverse transform.
+    The controller consumes a flange-frame target; callers provide the desired
+    TCP-frame target and the configured tool transform.
     """
 
     compensated = compose(desired_tcp_in_base, inverse(tool0_to_tcp))
