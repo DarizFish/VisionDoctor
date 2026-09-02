@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Any
 from visiondoctor.environment import FileBundleAdapter, ObservationBundle
 from visiondoctor.repair import ProjectBinding, Recheck, recheck
 
-from .case import Case
+from .case import Case, Evidence
 from .chain import SEGMENT_SCOPE
 from .gates import approval_gate, diagnosis_gate
 from .repair import ApprovalRecord, RepairPlan
@@ -23,6 +24,7 @@ class CaseRecord:
     bundle: ObservationBundle | None = None
     turns: list[Any] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
+    uploads: dict[str, Path] = field(default_factory=dict)
     approvals: dict[str, ApprovalRecord] = field(default_factory=dict)
     applied_at: datetime | None = None
     recheck: Recheck | None = None
@@ -79,6 +81,44 @@ class CaseService:
         )
         return {"run_id": bundle.run_id, "admitted": len(admitted)}
 
+    def attach_files(
+        self, case_id: str, files: list[dict[str, str]], root: Path | None = None
+    ) -> dict[str, Any]:
+        """Take material a person handed in directly and admit it as evidence."""
+
+        record = self.record(case_id)
+        folder = (root or Path(".runtime/vd-uploads")) / case_id
+        folder.mkdir(parents=True, exist_ok=True)
+        admitted = []
+        for item in files:
+            name = Path(str(item["name"])).name
+            payload = base64.b64decode(item["content_base64"])
+            path = folder / f"{len(record.uploads) + 1:03d}-{name}"
+            path.write_bytes(payload)
+            evidence = record.case.add_evidence(
+                Evidence(
+                    evidence_id=record.case.next_evidence_id(),
+                    bundle_id="handed-in",
+                    reference=f"uploads/{name}",
+                    media_type=str(item.get("media_type") or "application/octet-stream"),
+                    captured_at=datetime.now(UTC),
+                    clock_domain="handed_in",
+                    summary=f"{name}，由人工提供",
+                )
+            )
+            # Handed-in material counts as delivered only once it is read.
+            record.case.examined.discard(evidence.evidence_id)
+            record.uploads[evidence.evidence_id] = path
+            admitted.append({"evidence_id": evidence.evidence_id, "name": name})
+        record.messages.append(
+            {
+                "role": "source",
+                "content": "补充材料 " + "、".join(item["name"] for item in admitted),
+                "detail": f"{len(admitted)} 份，已登记为证据待查阅",
+            }
+        )
+        return {"admitted": admitted}
+
     def bind_project(
         self,
         case_id: str,
@@ -105,14 +145,16 @@ class CaseService:
         from visiondoctor.llm import ModelSettings, OpenAICompatibleGateway
 
         record = self.record(case_id)
-        if record.adapter is None or record.bundle is None:
-            raise ValueError("这个案件还没有接入观察证据包")
+        if record.bundle is None and not record.uploads:
+            raise ValueError("这个案件还没有任何材料：先附上证据包或上传图片、日志")
         turn = investigate(
             case=record.case,
             adapter=record.adapter,
             bundle=record.bundle,
             prompt=prompt,
             gateway=OpenAICompatibleGateway(ModelSettings.from_environment()),
+            vision=_vision_gateway(),
+            uploads=record.uploads,
         )
         record.turns.append(turn)
         if record.case.title == "新的诊断":
@@ -280,3 +322,18 @@ class CaseService:
             if plan.plan_id == plan_id:
                 return plan
         raise KeyError(f"没有这个候选：{plan_id}")
+
+
+def _vision_gateway():
+    """The image observer, when it is configured; images stay unread otherwise."""
+
+    from visiondoctor.multimodal import (
+        OpenAIVisionGateway,
+        VisionConfigurationError,
+        VisionSettings,
+    )
+
+    try:
+        return OpenAIVisionGateway(VisionSettings.from_environment())
+    except VisionConfigurationError:
+        return None

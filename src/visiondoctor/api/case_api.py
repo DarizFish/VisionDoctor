@@ -25,6 +25,16 @@ class Observation(BaseModel):
     directory: str
 
 
+class Attachment(BaseModel):
+    name: str
+    media_type: str
+    content_base64: str
+
+
+class Attachments(BaseModel):
+    files: list[Attachment]
+
+
 class Project(BaseModel):
     repository: str
     revision: str
@@ -74,6 +84,14 @@ def create_case_app(service: CaseService | None = None) -> FastAPI:
     @app.post("/api/v1/cases/{case_id}/observations")
     def attach(case_id: str, body: Observation) -> dict[str, Any]:
         return guard(cases.attach_observation, case_id, Path(body.directory))
+
+    @app.post("/api/v1/cases/{case_id}/attachments")
+    def attach_files(case_id: str, body: Attachments) -> dict[str, Any]:
+        return guard(
+            cases.attach_files,
+            case_id,
+            [item.model_dump() for item in body.files],
+        )
 
     @app.post("/api/v1/cases/{case_id}/project")
     def bind(case_id: str, body: Project) -> dict[str, Any]:

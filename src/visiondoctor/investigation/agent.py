@@ -79,16 +79,18 @@ def _hypotheses(payload: dict[str, Any], case: Case) -> tuple[Hypothesis, ...]:
 def investigate(
     *,
     case: Case,
-    adapter: FileBundleAdapter,
-    bundle: ObservationBundle,
+    adapter: FileBundleAdapter | None,
+    bundle: ObservationBundle | None,
     prompt: str,
     gateway: ModelGateway,
     vision: VisionGateway | None = None,
     sandbox_root: Path | None = None,
+    uploads: dict[str, Path] | None = None,
 ) -> DecisionTurn:
     """Let the model push the case one turn, and keep the ledger while it does."""
 
-    turn = Investigation(case, Toolbox(case, adapter, bundle, vision, sandbox_root), prompt)
+    toolbox = Toolbox(case, adapter, bundle, vision, sandbox_root, uploads)
+    turn = Investigation(case, toolbox, prompt)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {

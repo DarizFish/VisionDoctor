@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,21 +31,28 @@ TEXT_LIMIT = 20_000
 BATCH_LIMIT = 8
 
 
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
 class Toolbox:
     """What one investigation may ask of one collected observation."""
 
     def __init__(
         self,
         case: Case,
-        adapter: FileBundleAdapter,
-        bundle: ObservationBundle,
+        adapter: FileBundleAdapter | None,
+        bundle: ObservationBundle | None,
         vision: VisionGateway | None = None,
         sandbox_root: Path | None = None,
+        uploads: dict[str, Path] | None = None,
     ) -> None:
         self.case = case
         self.adapter = adapter
         self.bundle = bundle
         self.vision = vision
+        #: Material a person handed in directly, by evidence id.
+        self.uploads = uploads or {}
         self.sandbox_root = sandbox_root or Path(".runtime/vd-sandbox")
 
     def list_evidence(self) -> list[dict[str, Any]]:
@@ -70,7 +78,7 @@ class Toolbox:
         delivered: list[dict[str, Any]] = []
         for evidence_id in evidence_ids:
             item = self._evidence(evidence_id)
-            payload = self.adapter.read_artifact(item.reference)
+            payload = self._payload(item)
             self.case.examined.add(evidence_id)
             delivered.append(
                 {
@@ -127,11 +135,11 @@ class Toolbox:
         evidence = self.case.add_evidence(
             Evidence(
                 evidence_id=self.case.next_evidence_id(),
-                bundle_id=self.bundle.run_id,
+                bundle_id=self.bundle.run_id if self.bundle else "-",
                 reference="derived/transform-chain",
                 media_type="application/json",
-                captured_at=self.bundle.created_at,
-                clock_domain=self.bundle.clock.source,
+                captured_at=_now(),
+                clock_domain="host",
                 summary="变换链核算，来自 " + "、".join(sources),
             )
         )
@@ -143,9 +151,23 @@ class Toolbox:
                 return item
         raise KeyError(f"{evidence_id} is not in this case")
 
+    def _payload(self, item: Evidence) -> bytes:
+        """Bundle artifacts come through the adapter; handed-in files from disk."""
+
+        if item.evidence_id in self.uploads:
+            return self.uploads[item.evidence_id].read_bytes()
+        if self.adapter is None:
+            raise ValueError(f"{item.evidence_id} 没有可读取的来源")
+        return self.adapter.read_artifact(item.reference)
+
+    def _local_path(self, item: Evidence) -> Path:
+        if item.evidence_id in self.uploads:
+            return self.uploads[item.evidence_id]
+        return self.adapter.root / item.reference
+
     def _parsed(self, evidence_id: str) -> dict[str, Any]:
         item = self._evidence(evidence_id)
-        payload = self.adapter.read_artifact(item.reference)
+        payload = self._payload(item)
         self.case.examined.add(evidence_id)
         text = payload.decode("utf-8")
         if item.reference.endswith((".yaml", ".yml")):
@@ -174,7 +196,7 @@ class Toolbox:
             return {"unavailable": "没有配置视觉模型，这张图无法被观察"}
         del payload
         assessment = self.vision.assess(
-            self.adapter.root / item.reference,
+            self._local_path(item),
             attachment_id=item.evidence_id,
             visible_name=item.reference,
             user_context="这是一次抓取节拍的现场画面，只描述看得见的内容。",
@@ -236,7 +258,7 @@ def artifact_path(adapter: FileBundleAdapter, reference: str) -> Path:
         binding = self._unlocked_project()
         inputs = {
             artifact.path.replace("/", "-"): self.adapter.read_artifact(artifact.path)
-            for artifact in self.bundle.artifacts
+            for artifact in (self.bundle.artifacts if self.bundle else ())
             if artifact.path.endswith("input.json")
         }
         try:
@@ -264,8 +286,8 @@ def artifact_path(adapter: FileBundleAdapter, reference: str) -> Path:
                 bundle_id=self.bundle.run_id,
                 reference=f"derived/replay/{plan.plan_id}",
                 media_type="application/json",
-                captured_at=self.bundle.created_at,
-                clock_domain=self.bundle.clock.source,
+                captured_at=_now(),
+                clock_domain="host",
                 summary=f"{plan.plan_id} 的隔离复现，理由：{rationale}",
             )
         )

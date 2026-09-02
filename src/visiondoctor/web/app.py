@@ -168,7 +168,41 @@ def _render_messages(view: dict[str, Any]) -> None:
             _render_calls(list(message.get("calls") or ()))
 
 
+MEDIA_TYPES = {
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
+    "txt": "text/plain", "log": "text/plain", "json": "application/json",
+    "csv": "text/csv", "yaml": "text/yaml", "yml": "text/yaml", "pdf": "application/pdf",
+}
+
+
+def _encode(files: list[Any]) -> list[dict[str, str]]:
+    import base64
+
+    encoded = []
+    for item in files:
+        suffix = item.name.rsplit(".", maxsplit=1)[-1].lower()
+        encoded.append(
+            {
+                "name": item.name,
+                "media_type": MEDIA_TYPES.get(suffix, "application/octet-stream"),
+                "content_base64": base64.b64encode(item.getvalue()).decode("ascii"),
+            }
+        )
+    return encoded
+
+
 def _render_composer(case_id: str, view: dict[str, Any]) -> None:
+    nonce = int(st.session_state.get("upload_nonce", 0))
+    files = st.file_uploader(
+        "补充图片或文件",
+        type=tuple(MEDIA_TYPES),
+        accept_multiple_files=True,
+        key=f"uploads-{nonce}",
+        help="图片交给视觉模型逐张观察；日志、JSON、CSV 直接读取文字。",
+    )
+    st.caption(
+        "上传的材料会登记为证据，但只有诊断助手真的读过才算数——右侧证据清单里会标出来。"
+    )
     with st.expander("附上一次观察证据包", expanded=not view.get("observation")):
         st.caption("证据包是产品认识现场的唯一入口：它只读清单里登记的工件，不直接连相机或机器人。")
         directory = st.text_input("证据包目录", key="bundle-dir", label_visibility="collapsed")
@@ -180,9 +214,10 @@ def _render_composer(case_id: str, view: dict[str, Any]) -> None:
     prompt = st.chat_input("描述现象、回答问题，或告诉诊断助手接下来要检查什么……")
     if prompt is None:
         return
-    if not view.get("observation"):
-        st.error("这个案件还没有附上观察证据包，诊断助手没有可以查看的材料。")
+    uploads = _encode(list(files or ()))
+    if uploads and not _post(f"/api/v1/cases/{case_id}/attachments", {"files": uploads}):
         return
+    st.session_state.upload_nonce = nonce + 1
     with st.spinner("诊断助手正在查看你提供的材料……工具调用由宿主执行并记账"):
         if _post(f"/api/v1/cases/{case_id}/turns", {"prompt": prompt}):
             st.rerun()

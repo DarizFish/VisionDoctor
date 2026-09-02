@@ -166,7 +166,7 @@ def tools_for(case: Case) -> tuple[dict[str, Any], ...]:
     return TOOLS
 
 
-def build_view(case: Case, bundle: ObservationBundle) -> dict[str, Any]:
+def build_view(case: Case, bundle: ObservationBundle | None) -> dict[str, Any]:
     """Case state, the observation's own account of itself, and the catalogue."""
 
     verdict = diagnosis_gate(case)
@@ -178,14 +178,18 @@ def build_view(case: Case, bundle: ObservationBundle) -> dict[str, Any]:
             "diagnosis_gate": {"passed": verdict.passed, "missing": list(verdict.reasons)},
             "source_visible": bool(case.project is not None and verdict.passed),
         },
-        "observation": {
-            "run_id": bundle.run_id,
-            "collected_at": bundle.created_at.isoformat(),
-            "project_revision": bundle.project_revision,
-            "task_results": [result.model_dump(mode="json") for result in bundle.results],
-            "timeline": [event.model_dump(mode="json") for event in bundle.timeline],
-            "cross_source_comparable": bundle.cross_source_comparable,
-        },
+        "observation": (
+            {
+                "run_id": bundle.run_id,
+                "collected_at": bundle.created_at.isoformat(),
+                "project_revision": bundle.project_revision,
+                "task_results": [result.model_dump(mode="json") for result in bundle.results],
+                "timeline": [event.model_dump(mode="json") for event in bundle.timeline],
+                "cross_source_comparable": bundle.cross_source_comparable,
+            }
+            if bundle is not None
+            else None
+        ),
         "chain": [
             {
                 "segment": segment.value,
