@@ -30,3 +30,6 @@ submission/
 
 # Technical design spec, delivered as a document rather than through the repo.
 *.docx
+
+# 复赛录屏原始素材（约 1 GB），不进仓库
+复赛资料/

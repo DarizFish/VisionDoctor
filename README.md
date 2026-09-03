@@ -136,25 +136,26 @@ py -3 -m venv .venv
 
 ### 配置模型
 
-在项目根目录创建 `.env`（可参考 [`.env.example`](.env.example)），或直接设置环境变量：
+在项目根目录创建 `.env`（可参考 [`.env.example`](.env.example)），或直接设置环境变量。
+对话与视觉都走 **OpenAI 兼容协议**，换服务商只改 base URL 和模型标识：
 
-```powershell
-$env:VISIONDOCTOR_LLM_API_KEY = "<你的密钥>"
-$env:VISIONDOCTOR_LLM_BASE_URL = "https://api.deepseek.com"
-$env:VISIONDOCTOR_LLM_MODEL = "deepseek-v4-flash"
+```text
+VISIONDOCTOR_LLM_API_KEY=<你的密钥>
+VISIONDOCTOR_LLM_BASE_URL=https://api.xiaomimimo.com/v1
+VISIONDOCTOR_LLM_MODEL=mimo-v2.5-pro
+VISIONDOCTOR_LLM_MAX_TOKENS=32768
+
+VISIONDOCTOR_VISION_BASE_URL=https://api.xiaomimimo.com/v1
+VISIONDOCTOR_VISION_MODEL=mimo-v2.5
+VISIONDOCTOR_VISION_TIMEOUT_S=300
 ```
 
-图片理解使用本地视觉模型，不需要额外密钥：
-
-```powershell
-winget install --id Ollama.Ollama --exact
-ollama pull qwen3-vl:4b
-```
+本次复赛演示用的就是上面这一组（小米 MiMo）。想让图片不出本机，把视觉那三行换成本地
+Ollama 即可，产品侧不用改：
 
 ```text
 VISIONDOCTOR_VISION_BASE_URL=http://127.0.0.1:11434
 VISIONDOCTOR_VISION_MODEL=qwen3-vl:4b
-VISIONDOCTOR_VISION_TIMEOUT_S=300
 ```
 
 ### 启动
@@ -489,8 +490,8 @@ git clone example/robot_cell_vision.bundle robot_cell_vision
 
 | 用途 | 服务 / 模型 | 性质 | 可替代性 |
 |---|---|---|---|
-| 对话、诊断、补丁生成 | DeepSeek `deepseek-v4-flash` | 商业闭源 API，按量计费 | 通过标准 OpenAI 兼容协议接入，换服务商只需改 base URL 与模型标识，无供应商锁定 |
-| 图片理解 | `qwen3-vl:4b` | 开源模型，本地 Ollama 推理 | 图片不出本机 |
+| 对话、定界、补丁生成 | 小米 MiMo `mimo-v2.5-pro` | 商业闭源 API，按量计费 | 标准 OpenAI 兼容协议，换服务商只改 base URL 与模型标识，无供应商锁定 |
+| 图片观察 | 小米 MiMo `mimo-v2.5` | 商业闭源 API | 可换成本地 Ollama（如 `qwen3-vl:4b`）让图片不出本机，产品侧不改 |
 | 仿真工位 | ROS 2 Jazzy / Gazebo / MoveIt 2 | 开源 | 只用于产出观察包；换成真实产线导出同样契约的包即可，产品侧不改 |
 | 候选代码执行 | Git worktree + 子进程 | 开源 | 不需要 Docker；执行的是项目自己声明的命令 |
 
