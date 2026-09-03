@@ -483,8 +483,25 @@ def _render_plans(case_id: str, view: dict[str, Any]) -> None:
                         st.rerun()
             elif plan["approved"]:
                 st.success(f"已批准 · {plan['approver']}")
+                _render_landing(plan.get("landed"))
             else:
                 st.warning(f"已退回 · {plan['approver']}")
+
+
+def _render_landing(landed: dict[str, Any] | None) -> None:
+    """Where the approved patch went, and what is still someone's to do."""
+
+    if not landed:
+        return
+    if landed.get("error"):
+        st.error(f"没能写入仓库：{landed['error']}")
+        return
+    st.markdown(f"补丁已写入分支 `{landed['branch']}`")
+    st.caption(
+        (landed["note"] or f"提交 {landed['commit'][:12]}")
+        + "　你当前的检出没有变动，也没有推到远端。合入主线并部署到工位，仍然由你决定。"
+    )
+    st.code(f"git merge {landed['branch']}", language="bash")
 
 
 def _render_recheck(case_id: str, view: dict[str, Any]) -> None:

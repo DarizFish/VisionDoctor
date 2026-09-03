@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from visiondoctor.environment import FileBundleAdapter, ObservationBundle
-from visiondoctor.repair import ProjectBinding, Recheck, recheck
+from visiondoctor.repair import ProjectBinding, Recheck, land, recheck
 
 from .case import Case, Evidence
 from .chain import SEGMENT_NAME, SEGMENT_SCOPE
@@ -30,6 +30,8 @@ class CaseRecord:
     #: The turn in flight, so a viewer can watch it work.
     running: dict[str, Any] | None = None
     approvals: dict[str, ApprovalRecord] = field(default_factory=dict)
+    #: Where an approved plan was written in the repository, by plan id.
+    landings: dict[str, dict[str, Any]] = field(default_factory=dict)
     applied_at: datetime | None = None
     recheck: Recheck | None = None
 
@@ -291,7 +293,52 @@ class CaseService:
                 "detail": f"{approver} · 冻结 {plan.frozen_hash[:16]}",
             }
         )
-        return approval_gate(plan, decision).model_dump(mode="json")
+        verdict = approval_gate(plan, decision)
+        if verdict.passed:
+            self._land(record, plan, approver)
+        return verdict.model_dump(mode="json")
+
+    def _land(self, record: CaseRecord, plan: RepairPlan, approver: str) -> None:
+        """Write the approved bytes into the repository, on a branch of their own.
+
+        Copying a reviewed diff by hand is where an unreviewed character gets in.
+        The host writes it instead -- to a new branch, leaving the checkout where
+        it stands.  Taking that branch into the line, and onto the cell, is still
+        someone's decision to make.
+        """
+
+        binding = record.case.project
+        if binding is None:
+            return
+        try:
+            landed = land(
+                binding=binding,
+                plan_id=plan.plan_id,
+                frozen_hash=plan.frozen_hash,
+                diff=plan.diff,
+                case_id=record.case.case_id,
+                approver=approver,
+                sandbox_root=Path(".runtime/vd-sandbox"),
+            )
+        except Exception as exc:  # noqa: BLE001 - the person needs the reason
+            record.landings[plan.plan_id] = {"error": f"{type(exc).__name__}: {exc}"}
+            record.messages.append(
+                {
+                    "role": "source",
+                    "content": f"{plan.plan_id} 没能写入仓库",
+                    "detail": str(exc),
+                }
+            )
+            return
+        record.landings[plan.plan_id] = landed
+        record.messages.append(
+            {
+                "role": "source",
+                "content": f"{plan.plan_id} 已写入分支 {landed['branch']}",
+                "detail": landed["note"]
+                or f"提交 {landed['commit'][:12]}　你当前的检出没有变动",
+            }
+        )
 
     def mark_applied(self, case_id: str) -> datetime:
         record = self.record(case_id)
@@ -408,6 +455,7 @@ class CaseService:
                     "approved": decision.approved if decision else None,
                     "approver": decision.approver if decision else None,
                     "gate": approval_gate(plan, decision).model_dump(mode="json"),
+                    "landed": record.landings.get(plan.plan_id),
                 }
             )
         return rows
