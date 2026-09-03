@@ -66,6 +66,10 @@ def _apply_style() -> None:
         .vd-seg-cleared {border-left-color: #22a06b;}
         .vd-seg-untested {border-left-color: rgba(120,120,120,.3);}
         .vd-scope {color: #6b7280; font-size: .78rem; line-height: 1.5;}
+        /* The pinned input belongs to the conversation, not to the whole page:
+           hold it over the left two thirds so it stops running under the panel. */
+        [data-testid="stBottomBlockContainer"] {max-width: 1600px; padding-bottom: 1rem;}
+        [data-testid="stBottomBlockContainer"] > div {width: 65%; min-width: 22rem;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -294,35 +298,10 @@ def _encode(files: list[Any]) -> list[dict[str, str]]:
     return encoded
 
 
-def _render_uploads(case_id: str) -> None:
-    nonce = int(st.session_state.get("upload_nonce", 0))
-    with st.popover("＋ 附加材料", use_container_width=False):
-        files = st.file_uploader(
-            "图片、日志、JSON、CSV",
-            type=tuple(MEDIA_TYPES),
-            accept_multiple_files=True,
-            key=f"uploads-{nonce}",
-            help="图片交给视觉模型逐张观察；日志、JSON、CSV 直接读取文字。",
-        )
-        directory = st.text_input(
-            "或一次运行的观察证据包（目录路径）",
-            key="bundle-dir",
-            placeholder=".runtime/gazebo-pick-cell/exports/run-…",
-        )
-        attach = st.button("附上证据包") and directory.strip()
-        if attach and _post(f"/api/v1/cases/{case_id}/observations", {"directory": directory}):
-            st.rerun()
-        st.caption("材料都会登记为证据，但只有诊断助手真的读过才算数。")
-    st.session_state.pending_uploads = _encode(list(files or ()))
-    st.session_state.upload_nonce_value = nonce
-
-
-def _submit(case_id: str, prompt: str) -> None:
-    uploads = st.session_state.get("pending_uploads") or []
+def _submit(case_id: str, prompt: str, files: list[Any]) -> None:
+    uploads = _encode(files)
     if uploads and not _post(f"/api/v1/cases/{case_id}/attachments", {"files": uploads}):
         return
-    st.session_state.upload_nonce = int(st.session_state.get("upload_nonce_value", 0)) + 1
-    st.session_state.pending_uploads = []
     if _post(f"/api/v1/cases/{case_id}/turns", {"prompt": prompt}):
         st.rerun()
 
@@ -354,6 +333,20 @@ def _connections_body(
             f"{html.escape(results)}</span></div>",
             unsafe_allow_html=True,
         )
+    else:
+        with st.container(border=True):
+            st.markdown("**观察证据包**")
+            st.caption("一次运行导出的目录。单张图片和日志直接从输入框的 ＋ 交上来即可。")
+            directory = st.text_input(
+                "证据包所在目录",
+                key="bundle-dir",
+                placeholder=".runtime/gazebo-pick-cell/exports/run-…",
+            )
+            attach = st.button("接入证据包", use_container_width=True) and directory.strip()
+            if attach and _post(
+                f"/api/v1/cases/{case_id}/observations", {"directory": directory}
+            ):
+                st.rerun()
     project = view.get("project")
     if project:
         st.markdown(
@@ -565,10 +558,13 @@ def main() -> None:
         _render_recheck(case_id, view)
         _render_evidence(view)
         _render_connections(case_id, view)
-    _render_uploads(case_id)
-    prompt = st.chat_input("描述现象、回答问题，或告诉诊断助手接下来要检查什么……")
-    if prompt:
-        _submit(case_id, prompt)
+    said = st.chat_input(
+        "描述现象、回答问题，或告诉诊断助手接下来要检查什么……",
+        accept_file="multiple",
+        file_type=tuple(MEDIA_TYPES),
+    )
+    if said and (said.text or said.files):
+        _submit(case_id, said.text.strip() or "先看看我交上来的材料。", list(said.files))
 
 
 main()
