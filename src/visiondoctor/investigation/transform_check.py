@@ -61,21 +61,25 @@ def _residual(predicted: np.ndarray, reference: np.ndarray) -> Residual:
 class DeclaredMatch:
     """How closely the observed error resembles one declared transform.
 
-    A transform applied where its inverse belongs leaves an error equal to that
-    transform composed with itself; a transform applied where nothing belongs
-    leaves the transform itself.  Both comparisons are reported for every
+    A transform used one time too many leaves an error equal to that transform
+    itself; used two times too many, equal to it composed with itself.  The same
+    holds for its inverse, so both directions are reported.  Four comparisons per
     declared transform, with no opinion about which row matters.
     """
 
     name: str
     applied_once: Residual
     applied_twice: Residual
+    inverted_once: Residual
+    inverted_twice: Residual
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "error_vs_transform": self.applied_once.as_dict(),
             "error_vs_transform_twice": self.applied_twice.as_dict(),
+            "error_vs_inverse": self.inverted_once.as_dict(),
+            "error_vs_inverse_twice": self.inverted_twice.as_dict(),
         }
 
 
@@ -167,6 +171,10 @@ def check_transform_chain(
                 name=name,
                 applied_once=_residual(error, transform),
                 applied_twice=_residual(error, compose(transform, transform)),
+                inverted_once=_residual(error, invert(transform)),
+                inverted_twice=_residual(
+                    error, compose(invert(transform), invert(transform))
+                ),
             )
             for name, transform in declared.items()
         ),
