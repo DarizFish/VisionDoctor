@@ -13,6 +13,7 @@ from typing import Any
 from visiondoctor.environment import FileBundleAdapter, ObservationBundle
 from visiondoctor.repair import ProjectBinding, Recheck, land, recheck
 
+from . import store
 from .case import Case, Evidence
 from .chain import SEGMENT_NAME, SEGMENT_SCOPE
 from .gates import approval_gate, diagnosis_gate
@@ -27,6 +28,9 @@ class CaseRecord:
     turns: list[Any] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
     uploads: dict[str, Path] = field(default_factory=dict)
+    #: Export directories, kept instead of their contents so a restart can
+    #: collect the bundles again rather than copy them.
+    observation_dirs: list[str] = field(default_factory=list)
     #: The turn in flight, so a viewer can watch it work.
     running: dict[str, Any] | None = None
     approvals: dict[str, ApprovalRecord] = field(default_factory=dict)
@@ -39,14 +43,22 @@ class CaseRecord:
 class CaseService:
     """Create cases, feed them observations, push them one turn at a time."""
 
-    def __init__(self) -> None:
-        self.records: dict[str, CaseRecord] = {}
+    def __init__(self, root: Path | None = None) -> None:
+        self.root = Path(root) if root is not None else store.ROOT
+        self.records: dict[str, CaseRecord] = store.load_all(CaseRecord, self.root)
+
+    def keep(self, case_id: str) -> None:
+        """Write the case down.  Called after anything that changed it."""
+
+        store.save(self.records[case_id], self.root)
 
     # ---- lifecycle ---------------------------------------------------------------
 
     def create(self, title: str, *, guided_motion: bool = True) -> str:
-        case_id = f"CASE-{len(self.records) + 1:03d}"
+        taken = [int(key.rsplit("-", maxsplit=1)[-1]) for key in self.records]
+        case_id = f"CASE-{max(taken, default=0) + 1:03d}"
         self.records[case_id] = CaseRecord(Case(case_id, title, guided_motion=guided_motion))
+        self.keep(case_id)
         return case_id
 
     def listing(self) -> list[dict[str, Any]]:
@@ -78,6 +90,7 @@ class CaseService:
         admitted = record.case.admit(bundle)
         record.adapter = adapter
         record.bundle = bundle
+        record.observation_dirs.append(str(Path(directory)))
         record.messages.append(
             {
                 "role": "source",
@@ -86,6 +99,7 @@ class CaseService:
             }
         )
         self._realign_project(record)
+        self.keep(case_id)
         return {"run_id": bundle.run_id, "admitted": len(admitted)}
 
     def _realign_project(self, record: CaseRecord) -> None:
@@ -169,6 +183,7 @@ class CaseService:
                 "files": admitted,
             }
         )
+        self.keep(case_id)
         return {"admitted": admitted}
 
     def evidence_content(self, case_id: str, evidence_id: str) -> dict[str, Any]:
@@ -211,6 +226,7 @@ class CaseService:
                 test_command=tuple(test_command) if test_command else None,
             )
         )
+        self.keep(case_id)
         return {"repository": str(binding.repository), "revision": binding.revision}
 
     # ---- pushing it forward ------------------------------------------------------
@@ -227,6 +243,7 @@ class CaseService:
             record.case.title = prompt[:24]
         record.messages.append({"role": "user", "content": prompt})
         record.running = {"prompt": prompt, "calls": [], "error": None}
+        self.keep(case_id)
         thread = threading.Thread(
             target=self._work, args=(case_id, prompt), daemon=True
         )
@@ -255,6 +272,7 @@ class CaseService:
             record.messages.append(
                 {"role": "assistant", "content": f"这一轮没有走完：{exc}", "calls": []}
             )
+            self.keep(case_id)
             return
         record.turns.append(turn)
         record.messages.append(
@@ -272,6 +290,7 @@ class CaseService:
             }
         )
         record.running = None
+        self.keep(case_id)
 
     def approve(
         self, case_id: str, plan_id: str, approver: str, *, approved: bool
@@ -296,6 +315,7 @@ class CaseService:
         verdict = approval_gate(plan, decision)
         if verdict.passed:
             self._land(record, plan, approver)
+        self.keep(case_id)
         return verdict.model_dump(mode="json")
 
     def _land(self, record: CaseRecord, plan: RepairPlan, approver: str) -> None:
@@ -340,6 +360,7 @@ class CaseService:
     def mark_applied(self, case_id: str) -> datetime:
         record = self.record(case_id)
         record.applied_at = datetime.now(UTC)
+        self.keep(case_id)
         return record.applied_at
 
     def run_recheck(self, case_id: str, directory: Path) -> dict[str, Any]:
@@ -348,6 +369,7 @@ class CaseService:
             raise ValueError("没有可比对的原始观察")
         after = FileBundleAdapter(Path(directory)).collect()
         record.case.admit(after)
+        record.observation_dirs.append(str(Path(directory)))
         outcome = recheck(before=record.bundle, after=after, applied_at=record.applied_at)
         record.recheck = outcome
         record.messages.append(
@@ -357,6 +379,7 @@ class CaseService:
                 "detail": outcome.scope,
             }
         )
+        self.keep(case_id)
         return outcome.as_dict()
 
     # ---- what a viewer sees ------------------------------------------------------
