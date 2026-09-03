@@ -1,0 +1,44 @@
+[
+ {
+  "场景": "观察包与仓库错配",
+  "动作": "把案件连到 topdown-ik-final-faulty",
+  "产品的回答": "这个仓库里没有 992b0f341a971df8acda48160ccf86adbe3b73ad 这个提交——观察包和源码很可能不是同一次运行。请确认仓库路径：C:\\Users\\zd\\Desktop\\goai-6e5785e-worktree\\.runtime\\gazebo-pick-cell\\projects\\topdown-ik-final-faulty",
+  "为什么": "包声明的提交不在这个仓里，说明源码和证据不是同一次运行。在连接时就拒绝，而不是让模型去分析一份从未产出过这批数据的代码。"
+ },
+ {
+  "场景": "诊断门未通过",
+  "动作": "此时模型能看到的工具",
+  "产品的回答": "read_evidence、check_transform_chain",
+  "为什么": "源码类工具根本不在发给模型的清单里——不是「看得见但被拒绝」，而是看不见。门是代码算的，不是模型声明的。"
+ },
+ {
+  "场景": "诊断门未通过",
+  "动作": "绕过清单强行调用 list_source",
+  "产品的回答": "诊断门未通过，源码不可见：no segment is implicated；no segment has been ruled out；no hypothesis rests on evidence",
+  "为什么": "每次调用源码工具都会重新算一遍门，绕不过去。"
+ },
+ {
+  "场景": "引用未交付的证据",
+  "动作": "模型给出 interface=suspect，引用它从未真正读过的 EV-001",
+  "产品的回答": "记下来的是 untested，引用被清空为 （空）",
+  "为什么": "宿主只认自己交付过的证据。模型自称检查过而没有调用的，引用被丢弃，判定降级为 untested——这一轮不会因此作废，但也拿不到没有根据的结论。"
+ },
+ {
+  "场景": "读取不存在的证据",
+  "动作": "请求一条案件里没有的 EV-999",
+  "产品的回答": "EV-999 is not in this case",
+  "为什么": "工具失败会被记账并显示给人看，不只是回给模型。"
+ },
+ {
+  "场景": "诊断门通过后",
+  "动作": "此时模型能看到的工具",
+  "产品的回答": "read_evidence、check_transform_chain、list_source、read_source、propose_repair",
+  "为什么": "门 True：至少一段被指认、至少一段被排除、假设挂着证据。工具面从 2 件开到 5 件。"
+ },
+ {
+  "场景": "未经审批的补丁",
+  "动作": "补丁 PLAN-1 已冻结，直接问审批门能不能应用",
+  "产品的回答": "passed=False　no one has decided on this plan",
+  "为什么": "补丁不会自己生效。审批门要求有人对这一个冻结哈希做过决定。"
+ }
+]

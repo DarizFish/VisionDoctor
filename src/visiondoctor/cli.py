@@ -63,7 +63,6 @@ def build_parser() -> argparse.ArgumentParser:
     serve = subcommands.add_parser("serve", help="serve the VisionDoctor HTTP API")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
-    serve.add_argument("--data-root", type=Path, default=Path(".visiondoctor/server"))
     reliability = subcommands.add_parser(
         "reliability", help="repeat and qualify the complete deterministic workflow"
     )
@@ -174,14 +173,9 @@ def main() -> None:
     if args.command == "serve":
         import uvicorn
 
-        from visiondoctor.api.app import ApiSettings, create_app
+        from visiondoctor.api.case_api import create_case_app
 
-        data_root = args.data_root.resolve()
-        settings = ApiSettings(
-            data_root=data_root,
-            database_path=data_root / "visiondoctor.sqlite3",
-        )
-        uvicorn.run(create_app(settings), host=args.host, port=args.port)
+        uvicorn.run(create_case_app(), host=args.host, port=args.port)
         return
     if args.command == "reliability":
         summary = run_reliability_gate(
