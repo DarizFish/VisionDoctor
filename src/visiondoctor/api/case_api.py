@@ -37,7 +37,8 @@ class Attachments(BaseModel):
 
 class Project(BaseModel):
     repository: str
-    revision: str
+    #: Left empty on purpose: the observation says which commit was running.
+    revision: str = ""
     replay_command: list[str]
     test_command: list[str] | None = None
 

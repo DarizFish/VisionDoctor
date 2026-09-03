@@ -156,9 +156,21 @@ class Toolbox:
 
         if item.evidence_id in self.uploads:
             return self.uploads[item.evidence_id].read_bytes()
+        if item.reference.startswith("results/"):
+            return self._task_result(item.reference.split("/", maxsplit=1)[1])
         if self.adapter is None:
             raise ValueError(f"{item.evidence_id} 没有可读取的来源")
         return self.adapter.read_artifact(item.reference)
+
+    def _task_result(self, part_id: str) -> bytes:
+        """A task result is evidence with no file behind it: serve the manifest's own."""
+
+        for result in self.bundle.results if self.bundle else ():
+            if result.part_id == part_id:
+                return json.dumps(
+                    result.model_dump(mode="json"), ensure_ascii=False
+                ).encode("utf-8")
+        raise KeyError(f"这个观察包里没有 {part_id} 的任务结果")
 
     def _local_path(self, item: Evidence) -> Path:
         if item.evidence_id in self.uploads:

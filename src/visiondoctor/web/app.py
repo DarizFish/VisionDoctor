@@ -134,12 +134,37 @@ def _render_sidebar(cases: list[dict[str, Any]]) -> str | None:
 def _describe_call(call: dict[str, Any], names: dict[str, str]) -> tuple[str, str]:
     """Say what the host did, the way a person would say it."""
 
+    headline, detail = _describe_intent(call, names)
+    if call.get("failure"):
+        # The success wording is past tense; a refused call never happened.
+        return f"⚠️ 没能{headline.replace('了', '', 1)}", _reason(str(call["failure"]))
+    return headline, detail
+
+
+#: Raw exception text is for the model; a person gets the sentence behind it.
+REASONS = (
+    ("neither on disk nor in the index", "绑定的提交里没有这个文件"),
+    ("does not exist in", "绑定的提交里没有这个文件"),
+    ("Not a valid object name", "绑定的提交无效，源码读不出来"),
+    ("is not listed in bundle.json", "观察包里没有这份材料"),
+    ("is not in this case", "这个案件里没有这条证据"),
+    ("never delivered", "引用了宿主没有交付过的证据"),
+    ("not on the investigation surface", "这件工具当前不开放"),
+)
+
+
+def _reason(failure: str) -> str:
+    for mark, said in REASONS:
+        if mark in failure:
+            return said
+    return failure.split(": ", maxsplit=1)[-1]
+
+
+def _describe_intent(call: dict[str, Any], names: dict[str, str]) -> tuple[str, str]:
     arguments = call.get("arguments") or {}
     listed = "、".join(
         f"{item} {names.get(item, '')}".strip() for item in (call.get("requested") or ())
     )
-    if call.get("failure"):
-        return f"⚠️ {call['name']} 没有成功", str(call["failure"])
     if call["name"] == "read_evidence":
         return f"读取了 {listed or '若干证据'}", ""
     if call["name"] == "check_transform_chain":
@@ -342,10 +367,11 @@ def _connections_body(
         st.markdown("**项目仓库**")
         st.caption("连接之后，只有诊断门通过了才读得到该提交下的源码。")
         repository = st.text_input("仓库所在文件夹", key="repo-path")
-        revision = st.text_input(
-            "提交",
-            value=(observation or {}).get("revision", {}).get("commit", ""),
-            key="repo-rev",
+        commit = (observation or {}).get("revision", {}).get("commit", "")
+        st.caption(
+            f"提交由观察包指定：`{commit[:12]}`　源码按这个提交读取"
+            if commit
+            else "观察包没有指定提交，将按仓库当前 HEAD 读取"
         )
         command = st.text_input(
             "项目自己的复跑命令",
@@ -355,11 +381,7 @@ def _connections_body(
         if st.button("连接项目", use_container_width=True) and repository.strip():
             posted = _post(
                 f"/api/v1/cases/{case_id}/project",
-                {
-                    "repository": repository,
-                    "revision": revision,
-                    "replay_command": command.split(),
-                },
+                {"repository": repository, "replay_command": command.split()},
             )
             if posted:
                 st.rerun()

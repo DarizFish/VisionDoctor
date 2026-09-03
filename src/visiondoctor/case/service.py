@@ -145,15 +145,26 @@ class CaseService:
         self,
         case_id: str,
         repository: Path,
-        revision: str,
-        replay_command: tuple[str, ...],
+        revision: str = "",
+        replay_command: tuple[str, ...] = (),
         test_command: tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
+        """Bind the repository at the revision that produced the observation.
+
+        The bundle already says which commit was running when the evidence was
+        taken, so nobody is asked to type it.  Reading whatever the working tree
+        holds today would let the model reason about code that never produced
+        this run -- and say nothing about it having done so.
+        """
+
         record = self.record(case_id)
+        repository = Path(repository).resolve()
+        wanted = revision.strip() or _observed_revision(record)
+        resolved = _resolve_revision(repository, wanted)
         binding = record.case.bind_project(
             ProjectBinding(
-                repository=Path(repository).resolve(),
-                revision=revision,
+                repository=repository,
+                revision=resolved,
                 replay_command=tuple(replay_command),
                 test_command=tuple(test_command) if test_command else None,
             )
@@ -382,6 +393,40 @@ def _vision_gateway():
         return OpenAIVisionGateway(VisionSettings.from_environment())
     except VisionConfigurationError:
         return None
+
+
+def _observed_revision(record: CaseRecord) -> str:
+    """The commit the observation says was running, or the tip when none said."""
+
+    if record.bundle is None:
+        return "HEAD"
+    return str(record.bundle.project_revision.get("commit") or "HEAD")
+
+
+def _resolve_revision(repository: Path, revision: str) -> str:
+    """Pin the revision to a commit that this repository actually holds.
+
+    A commit the repository has never heard of means the observation and the
+    source belong to different runs.  Say so here, where it can still be fixed.
+    """
+
+    import subprocess
+
+    if not (repository / ".git").exists():
+        raise ValueError(f"{repository} 不是一个 Git 仓库")
+    found = subprocess.run(
+        ["git", "rev-parse", "--verify", f"{revision}^{{commit}}"],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if found.returncode != 0:
+        raise ValueError(
+            f"这个仓库里没有 {revision} 这个提交——观察包和源码很可能不是同一次运行。"
+            f"请确认仓库路径：{repository}"
+        )
+    return found.stdout.strip()
 
 
 def _call_summary(call: Any) -> dict[str, Any]:
