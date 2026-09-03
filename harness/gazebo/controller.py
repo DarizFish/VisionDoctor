@@ -66,6 +66,25 @@ class PickCellController:
     def default_workspace(self) -> Path:
         return self.runtime_root / "projects" / DEFAULT_WORKSPACE.name
 
+    @property
+    def selected_workspace(self) -> Path:
+        """Return the last console-selected workspace, or the safe default."""
+
+        state = self._read_json(self.state_path) or {}
+        selected = state.get("selected_workspace")
+        if isinstance(selected, str) and selected:
+            return Path(selected)
+        return self.default_workspace
+
+    def remember_workspace(self, workspace: Path) -> Path:
+        """Persist the console's workspace selection across browser sessions."""
+
+        selected = workspace.resolve()
+        state = self._read_json(self.state_path) or {}
+        state["selected_workspace"] = str(selected)
+        self._write_json(self.state_path, state)
+        return selected
+
     def bootstrap_project(self) -> dict[str, str]:
         """Create the default faulty project and its operator-facing Git bundle."""
 
@@ -98,6 +117,7 @@ class PickCellController:
             "move_group_running": running and "move_group" in processes,
             "camera_bridge_running": running and "/pick_cell/rgbd/image" in processes,
             "default_workspace": str(self.default_workspace),
+            "selected_workspace": str(self.selected_workspace),
             "latest_run": latest,
         }
 
@@ -169,13 +189,16 @@ class PickCellController:
         self._wait_for_ros("/scaled_joint_trajectory_controller", timeout_s=95.0)
         self._start_camera_bridge()
         window = self._wait_for_window(timeout_s=35.0)
-        state = {
+        state = self._read_json(self.state_path) or {}
+        state.update(
+            {
             "started_at": self._now(),
             "container": self.CONTAINER,
             "image": self.IMAGE,
             "display": "Docker Desktop WSLg",
             "window": window,
-        }
+            }
+        )
         self._write_json(self.state_path, state)
         return {"started": True, "status": self.status()}
 
@@ -257,9 +280,6 @@ class PickCellController:
                 encoding="utf-8",
             )
             algorithm = self._run_project(project, input_path, output_path, log_path)
-            self._create_detection_overlay(
-                capture_root / "rgb.png", case_root / "detection-overlay.png"
-            )
             timeline.append(self._timeline("vision_and_command", case_id))
             motion = self._execute_motion(
                 algorithm["commanded_flange_base"],
@@ -709,22 +729,6 @@ class PickCellController:
             check=False,
         )
         return {"commit": result.stdout.strip() if result.returncode == 0 else "unversioned"}
-
-    @staticmethod
-    def _create_detection_overlay(source: Path, destination: Path) -> None:
-        from PIL import Image, ImageDraw
-
-        image = Image.open(source).convert("RGB")
-        draw = ImageDraw.Draw(image)
-        width, height = image.size
-        draw.rectangle(
-            (width * 0.34, height * 0.31, width * 0.66, height * 0.72),
-            outline=(80, 255, 180),
-            width=4,
-        )
-        draw.text((width * 0.34, height * 0.26), "vision pick candidate", fill=(80, 255, 180))
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        image.save(destination)
 
     @staticmethod
     def _sha256(path: Path) -> str:

@@ -202,7 +202,20 @@ def test_controller_status_is_local_state_without_a_running_container(
     assert status["running"] is False
     assert status["gazebo_gui_running"] is False
     assert status["default_workspace"].endswith("projects\\topdown-clearance-final-faulty")
+    assert status["selected_workspace"].endswith("projects\\topdown-clearance-final-faulty")
     assert status["image"] == "visiondoctor/ros-gazebo:jazzy-v1"
+
+
+def test_controller_remembers_console_workspace_across_sessions(tmp_path: Path) -> None:
+    runtime_root = tmp_path / "runtime"
+    controller = PickCellController(runtime_root=runtime_root)
+    selected = controller.remember_workspace(tmp_path / "candidate-project")
+
+    fresh_controller = PickCellController(runtime_root=runtime_root)
+
+    assert selected == (tmp_path / "candidate-project").resolve()
+    assert fresh_controller.selected_workspace == selected
+    assert fresh_controller.status()["selected_workspace"] == str(selected)
 
 
 def test_harness_python_has_no_product_import_or_api_route() -> None:

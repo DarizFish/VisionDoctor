@@ -14,6 +14,8 @@ import streamlit as st
 
 from harness.gazebo.controller import PickCellController
 
+WORKSPACE_INPUT_KEY = "pick_cell_workspace"
+
 
 def _controller() -> PickCellController:
     if "pick_cell_controller" not in st.session_state:
@@ -47,11 +49,8 @@ def _show_latest_run(controller: PickCellController, latest: dict[str, object] |
                 if result:
                     st.json(result)
                 image = part / "capture" / "rgb.png"
-                overlay = part / "detection-overlay.png"
-                if image.is_file() and overlay.is_file():
-                    left, right = st.columns(2)
-                    left.image(str(image), caption="RGB-D 相机原图")
-                    right.image(str(overlay), caption="检测叠加")
+                if image.is_file():
+                    st.image(str(image), caption="RGB-D 相机原图")
                 observer_clip = part / "capture" / "observer.gif"
                 if observer_clip.is_file():
                     st.image(str(observer_clip), caption="观察相机短片（真实相机帧）")
@@ -71,6 +70,10 @@ def _show_latest_run(controller: PickCellController, latest: dict[str, object] |
                     st.code(log_path.read_text(encoding="utf-8"), language="json")
 
 
+def _remember_workspace_choice(controller: PickCellController) -> None:
+    controller.remember_workspace(Path(str(st.session_state[WORKSPACE_INPUT_KEY])))
+
+
 def main() -> None:
     st.set_page_config(page_title="PICK-A17 Gazebo 操作台", layout="wide")
     st.title("PICK-A17 独立 Gazebo 抓取操作台")
@@ -83,11 +86,17 @@ def main() -> None:
         st.error(f"无法读取 Docker/Gazebo 状态：{exc}")
         return
 
+    if WORKSPACE_INPUT_KEY not in st.session_state:
+        st.session_state[WORKSPACE_INPUT_KEY] = str(controller.selected_workspace)
+
     with st.sidebar:
         st.header("项目工作区")
-        default = str(controller.default_workspace)
-        workspace = st.text_input("重放工作区", value=st.session_state.get("workspace", default))
-        st.session_state.workspace = workspace
+        workspace = st.text_input(
+            "重放工作区",
+            key=WORKSPACE_INPUT_KEY,
+            on_change=_remember_workspace_choice,
+            args=(controller,),
+        )
         st.caption("可填写人工或后续修复后的本地 PICK-A17 项目副本。")
         if st.button("初始化故障项目与 Git bundle", use_container_width=True):
             _action("初始化演示项目", controller.bootstrap_project)
