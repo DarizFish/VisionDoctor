@@ -389,6 +389,7 @@ def _call_summary(call: Any) -> dict[str, Any]:
         "name": call.name,
         "requested": list(call.requested),
         "delivered": list(call.delivered),
+        "failure": call.failure,
         "arguments": {
             key: (value if len(str(value)) < 200 else str(value)[:200] + "…")
             for key, value in call.arguments.items()

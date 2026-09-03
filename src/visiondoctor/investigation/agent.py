@@ -27,6 +27,32 @@ class InvestigationError(RuntimeError):
     """The turn could not be closed; the case is left untouched."""
 
 
+#: Marks the state snapshot that opens a turn, so an older one can be retired
+#: when a fresher one arrives.  Only the newest snapshot is true.
+VIEW_MARK = "【案件状态】\n"
+
+
+def _resume(case: Case) -> list[dict[str, Any]]:
+    """Carry the case's own conversation forward into this turn.
+
+    Everything said so far comes back: what the model asked for, what the host
+    handed over, what it concluded.  Only the state snapshots are collapsed --
+    a superseded one would contradict the current chain.
+    """
+
+    if not case.transcript:
+        return [{"role": "system", "content": SYSTEM_PROMPT}]
+    carried: list[dict[str, Any]] = []
+    for message in case.transcript:
+        content = message.get("content")
+        if isinstance(content, str) and content.startswith(VIEW_MARK):
+            question = content.split("\n\n", maxsplit=1)[-1]
+            carried.append({"role": "user", "content": question})
+        else:
+            carried.append(message)
+    return carried
+
+
 def _decode(content: str) -> dict[str, Any]:
     text = content.strip()
     if text.startswith("```"):
@@ -93,11 +119,11 @@ def investigate(
 
     toolbox = Toolbox(case, adapter, bundle, vision, sandbox_root, uploads)
     turn = Investigation(case, toolbox, prompt, observer)
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+    messages: list[dict[str, Any]] = _resume(case) + [
         {
             "role": "user",
-            "content": json.dumps(build_view(case, bundle), ensure_ascii=False, indent=2)
+            "content": VIEW_MARK
+            + json.dumps(build_view(case, bundle), ensure_ascii=False, indent=2)
             + "\n\n"
             + prompt,
         },
@@ -121,6 +147,8 @@ def investigate(
                     }
                 )
                 continue
+            messages.append(answer.raw_message)
+            case.transcript = messages
             return turn.commit(
                 findings=_findings(payload, case),
                 hypotheses=_hypotheses(payload, case),

@@ -30,6 +30,9 @@ class ToolCall(BaseModel):
     at: datetime
     requested: tuple[str, ...] = ()
     delivered: tuple[str, ...] = ()
+    #: Why the call came back empty-handed.  A tool that refuses says so to the
+    #: model; without this it would say nothing to the person watching.
+    failure: str | None = None
 
 
 class DecisionTurn(BaseModel):
@@ -71,7 +74,24 @@ class Investigation:
         if tool is None or name.startswith("_"):
             raise KeyError(f"{name} is not on the investigation surface")
         before = set(self.case.examined)
-        result = tool(**arguments)
+        try:
+            result: Any = tool(**arguments)
+        except Exception as exc:
+            # Record the refusal before letting it travel on: a call that was
+            # made and turned away is part of what happened this turn.
+            result = {"error": f"{type(exc).__name__}: {exc}"}
+            self._record(name, arguments, before, result)
+            raise
+        self._record(name, arguments, before, result)
+        return result
+
+    def _record(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        before: set[str],
+        result: Any,
+    ) -> ToolCall:
         recorded = ToolCall(
             name=name,
             arguments=arguments,
@@ -83,11 +103,16 @@ class Investigation:
             )
             or tuple(str(item) for item in arguments.get("evidence_ids") or ()),
             delivered=tuple(sorted(self.case.examined - before)),
+            failure=(
+                str(result["error"])
+                if isinstance(result, dict) and result.get("error")
+                else None
+            ),
         )
         self.calls.append(recorded)
         if self.observer is not None:
             self.observer(recorded)
-        return result
+        return recorded
 
     def commit(
         self,

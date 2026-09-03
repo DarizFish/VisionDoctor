@@ -46,6 +46,10 @@ class Case:
         #: Evidence the host actually delivered.  A model claiming to have
         #: checked something it never asked for cannot cite it.
         self.examined: set[str] = set()
+        #: What has been said so far, carried from one turn into the next so the
+        #: case reads as one conversation.  The ledger above stays the authority
+        #: on what counts as evidence; this is only memory of how it got there.
+        self.transcript: list[dict] = []
 
     @property
     def segments(self) -> tuple[Segment, ...]:

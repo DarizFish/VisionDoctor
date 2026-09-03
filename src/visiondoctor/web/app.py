@@ -138,6 +138,8 @@ def _describe_call(call: dict[str, Any], names: dict[str, str]) -> tuple[str, st
     listed = "、".join(
         f"{item} {names.get(item, '')}".strip() for item in (call.get("requested") or ())
     )
+    if call.get("failure"):
+        return f"⚠️ {call['name']} 没有成功", str(call["failure"])
     if call["name"] == "read_evidence":
         return f"读取了 {listed or '若干证据'}", ""
     if call["name"] == "check_transform_chain":

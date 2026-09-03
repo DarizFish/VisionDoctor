@@ -170,6 +170,7 @@ def build_view(case: Case, bundle: ObservationBundle | None) -> dict[str, Any]:
     """Case state, the observation's own account of itself, and the catalogue."""
 
     verdict = diagnosis_gate(case)
+    standing = {item.segment: item for item in case.findings}
     return {
         "case": {
             "case_id": case.case_id,
@@ -195,8 +196,31 @@ def build_view(case: Case, bundle: ObservationBundle | None) -> dict[str, Any]:
                 "segment": segment.value,
                 "status": status.value,
                 "scope": SEGMENT_SCOPE[segment],
+                **({"note": standing[segment].note} if segment in standing else {}),
+                **(
+                    {"evidence_ids": list(standing[segment].evidence_ids)}
+                    if segment in standing
+                    else {}
+                ),
             }
             for segment, status in case.demarcation().items()
+        ],
+        "hypotheses": [
+            {
+                "hypothesis_id": item.hypothesis_id,
+                "target_segment": item.target_segment.value,
+                "statement": item.statement,
+                "evidence_ids": list(item.evidence_ids),
+            }
+            for item in case.hypotheses
+        ],
+        "repair_plans": [
+            {
+                "plan_id": plan.plan_id,
+                "target_segment": plan.target_segment.value,
+                "frozen_hash": plan.frozen_hash,
+            }
+            for plan in case.repair_plans
         ],
         "evidence_catalogue": [
             {
@@ -205,6 +229,9 @@ def build_view(case: Case, bundle: ObservationBundle | None) -> dict[str, Any]:
                 "media_type": item.media_type,
                 "captured_at": item.captured_at.isoformat(),
                 "clock_domain": item.clock_domain,
+                #: Already delivered by the host, so it can be cited without
+                #: being asked for again.
+                "examined": item.evidence_id in case.examined,
             }
             for item in case.evidence
         ],
