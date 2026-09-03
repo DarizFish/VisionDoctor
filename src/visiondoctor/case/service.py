@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import threading
 from dataclasses import dataclass, field
+from dataclasses import replace as _replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -82,7 +83,46 @@ class CaseService:
                 "detail": f"{len(bundle.artifacts)} 件工件 · 收入 {len(admitted)} 条证据",
             }
         )
+        self._realign_project(record)
         return {"run_id": bundle.run_id, "admitted": len(admitted)}
+
+    def _realign_project(self, record: CaseRecord) -> None:
+        """A project bound before the observation arrived is bound to the wrong thing.
+
+        Connecting first pins the repository at its tip, which is whatever the
+        working copy happens to be today.  Once the bundle says which commit was
+        running, that answer wins.  A repository that does not hold that commit
+        did not produce this run, so the binding is dropped rather than left
+        quietly pointing somewhere else.
+        """
+
+        case = record.case
+        if case.project is None or record.bundle is None:
+            return
+        wanted = _observed_revision(record)
+        if wanted == "HEAD" or wanted == case.project.revision:
+            return
+        try:
+            resolved = _resolve_revision(case.project.repository, wanted)
+        except ValueError as exc:
+            repository = case.project.repository
+            case.project = None
+            record.messages.append(
+                {
+                    "role": "source",
+                    "content": "已断开项目仓库连接",
+                    "detail": f"{repository} 里没有这次运行的提交（{exc}）。请重新连接正确的仓库。",
+                }
+            )
+            return
+        case.project = _replace(case.project, revision=resolved)
+        record.messages.append(
+            {
+                "role": "source",
+                "content": "项目提交已按观察包对齐",
+                "detail": f"源码改按 {resolved[:12]} 读取",
+            }
+        )
 
     def attach_files(
         self, case_id: str, files: list[dict[str, str]], root: Path | None = None
