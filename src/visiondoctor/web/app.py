@@ -496,12 +496,11 @@ def _render_landing(landed: dict[str, Any] | None) -> None:
     if landed.get("error"):
         st.error(f"没能写入仓库：{landed['error']}")
         return
-    st.markdown(f"补丁已写入分支 `{landed['branch']}`")
-    st.caption(
-        (landed["note"] or f"提交 {landed['commit'][:12]}")
-        + "　你当前的检出没有变动，也没有推到远端。合入主线并部署到工位，仍然由你决定。"
+    st.markdown(
+        f"补丁已提交到 `{landed['branch']}` · `{landed['commit'][:12]}`　"
+        + "、".join(f"`{name}`" for name in landed["files"])
     )
-    st.code(f"git merge {landed['branch']}", language="bash")
+    st.caption("改动已经在仓库的文件里了，没有推到远端。部署到工位仍然由你决定。")
 
 
 def _render_recheck(case_id: str, view: dict[str, Any]) -> None:

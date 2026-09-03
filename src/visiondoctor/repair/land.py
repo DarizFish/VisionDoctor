@@ -1,10 +1,10 @@
-"""Put an approved patch into the repository, on a branch of its own.
+"""Put an approved patch into the repository it was raised against.
 
 Retyping a diff by hand is the one step in this path where a person can
 silently introduce something nobody reviewed, so the approved bytes are written
-by the host rather than copied by the reader.  What is written is a branch and
-nothing else: the current checkout does not move, no remote is touched, and
-deploying the change to the cell stays a human act.
+by the host rather than copied by the reader.  The commit lands on the branch
+that is checked out, which is what someone looking at the files expects to see.
+Deploying it to the cell stays a human act.
 """
 
 from __future__ import annotations
@@ -13,18 +13,21 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from visiondoctor.sandbox.git_worktree import GitWorktreeSandbox
-from visiondoctor.schemas.models import CandidateKind, CandidateVersion
-
 from .binding import ProjectBinding
 
 AUTHOR = ("-c", "user.name=VisionDoctor", "-c", "user.email=visiondoctor@localhost")
 
 
-def _git(cwd: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+def _git(
+    repository: Path, *arguments: str, feed: bytes | None = None
+) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(
-        ["git", *arguments], cwd=cwd, capture_output=True, text=True, check=False
+        ["git", *arguments], cwd=repository, capture_output=True, input=feed, check=False
     )
+
+
+def _said(result: subprocess.CompletedProcess[bytes]) -> str:
+    return (result.stderr or result.stdout).decode("utf-8", errors="replace").strip()
 
 
 def land(
@@ -35,39 +38,30 @@ def land(
     diff: str,
     case_id: str,
     approver: str,
-    sandbox_root: Path,
 ) -> dict[str, Any]:
-    """Commit the frozen patch onto a new branch and report where it went."""
+    """Apply the frozen patch and commit it, on whatever branch is checked out."""
 
-    branch = f"visiondoctor/{plan_id.lower()}-{frozen_hash[:8]}"
-    if _git(binding.repository, "rev-parse", "--verify", branch).returncode == 0:
-        return {"branch": branch, "commit": "", "note": "这个分支已经存在，没有重复写入"}
-    sandbox = GitWorktreeSandbox(binding.repository, sandbox_root)
-    handle = sandbox.create(
-        CandidateVersion(
-            candidate_id=f"land-{plan_id}",
-            kind=CandidateKind.ROOT_CAUSE_FIX,
-            base_commit=binding.revision,
-            patch_text=diff,
-            rationale=f"approved by {approver}",
-        )
+    repository = binding.repository
+    #: --index applies and stages exactly the paths the diff names, so the commit
+    #: carries the reviewed change and nothing else the tree happened to hold.
+    applied = _git(repository, "apply", "--index", "--whitespace=nowarn", "-", feed=diff.encode())
+    if applied.returncode != 0:
+        raise RuntimeError(_said(applied) or "补丁没能应用到这个仓库")
+    message = (
+        f"{case_id} {plan_id}: apply the approved repair\n\n"
+        f"Approved by {approver}.\n"
+        f"Frozen {frozen_hash}\n"
+        f"Base {binding.revision}\n"
     )
-    try:
-        worktree = handle.worktree
-        _git(worktree, "add", "-A", "--", ".")
-        message = (
-            f"{case_id} {plan_id}: apply the approved repair\n\n"
-            f"Approved by {approver}.\n"
-            f"Frozen {frozen_hash}\n"
-            f"Base {binding.revision}\n"
-        )
-        made = _git(worktree, *AUTHOR, "commit", "-m", message)
-        if made.returncode != 0:
-            raise RuntimeError(made.stderr.strip() or made.stdout.strip())
-        commit = _git(worktree, "rev-parse", "HEAD").stdout.strip()
-        named = _git(binding.repository, "branch", branch, commit)
-        if named.returncode != 0:
-            raise RuntimeError(named.stderr.strip())
-    finally:
-        sandbox.cleanup(handle, rollback=True)
-    return {"branch": branch, "commit": commit, "note": ""}
+    made = _git(repository, *AUTHOR, "commit", "-m", message)
+    if made.returncode != 0:
+        _git(repository, "reset", "--hard", "HEAD")
+        raise RuntimeError(_said(made) or "提交失败")
+    commit = _git(repository, "rev-parse", "HEAD").stdout.decode().strip()
+    branch = _git(repository, "rev-parse", "--abbrev-ref", "HEAD").stdout.decode().strip()
+    changed = _git(repository, "show", "--name-only", "--format=", commit)
+    return {
+        "branch": branch,
+        "commit": commit,
+        "files": _said(changed).split(),
+    }

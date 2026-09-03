@@ -299,12 +299,11 @@ class CaseService:
         return verdict.model_dump(mode="json")
 
     def _land(self, record: CaseRecord, plan: RepairPlan, approver: str) -> None:
-        """Write the approved bytes into the repository, on a branch of their own.
+        """Write the approved bytes into the repository they were raised against.
 
-        Copying a reviewed diff by hand is where an unreviewed character gets in.
-        The host writes it instead -- to a new branch, leaving the checkout where
-        it stands.  Taking that branch into the line, and onto the cell, is still
-        someone's decision to make.
+        Copying a reviewed diff by hand is where an unreviewed character gets in,
+        so the host writes it -- and writes it where someone opening the file
+        will see it.  Putting it on the cell is still a human act.
         """
 
         binding = record.case.project
@@ -318,7 +317,6 @@ class CaseService:
                 diff=plan.diff,
                 case_id=record.case.case_id,
                 approver=approver,
-                sandbox_root=Path(".runtime/vd-sandbox"),
             )
         except Exception as exc:  # noqa: BLE001 - the person needs the reason
             record.landings[plan.plan_id] = {"error": f"{type(exc).__name__}: {exc}"}
@@ -334,9 +332,8 @@ class CaseService:
         record.messages.append(
             {
                 "role": "source",
-                "content": f"{plan.plan_id} 已写入分支 {landed['branch']}",
-                "detail": landed["note"]
-                or f"提交 {landed['commit'][:12]}　你当前的检出没有变动",
+                "content": f"{plan.plan_id} 已提交到 {landed['branch']}",
+                "detail": f"提交 {landed['commit'][:12]}　{'、'.join(landed['files'])}",
             }
         )
 
