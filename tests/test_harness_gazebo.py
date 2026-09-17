@@ -7,10 +7,11 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from harness.gazebo.build_demo_project import build
 from harness.gazebo.controller import PickCellController
-from harness.gazebo.geometry import compose, pose, pose_error
+from harness.gazebo.geometry import compose, inverse, pose, pose_error
 from harness.gazebo.models import GraspClassification, classify_grasp
 
 
@@ -57,19 +58,14 @@ def test_demo_bundle_contains_normal_and_faulty_history(tmp_path: Path) -> None:
 def test_normal_revision_recovers_while_faulty_head_misses_pick_pose(tmp_path: Path) -> None:
     workspace = tmp_path / "faulty"
     build(workspace, tmp_path / "pick-a17.bundle")
+    calibration = yaml.safe_load((workspace / "config/cell_calibration.yaml").read_text())
     algorithm_input = {
         "run_id": "test-run",
         "part_id": "A",
         "detection_id": "test-detection",
-        "detected_part_in_camera": {
-            "position": [1.781695155, -0.024170628, -0.085942750],
-            "quaternion_xyzw": [
-                0.820718088,
-                0.176804984,
-                -0.347379300,
-                0.417719330,
-            ],
-        },
+        "detected_part_in_camera": compose(inverse(pose(calibration["camera_to_base"])), pose({
+            "position": [0.5, -0.1, 0.1], "quaternion_xyzw": [0, 0, 0, 1],
+        })),
     }
 
     def replay(revision: str) -> dict[str, object]:
@@ -201,8 +197,8 @@ def test_controller_status_is_local_state_without_a_running_container(
     status = controller.status()
     assert status["running"] is False
     assert status["gazebo_gui_running"] is False
-    assert status["default_workspace"].endswith("projects\\topdown-clearance-final-faulty")
-    assert status["selected_workspace"].endswith("projects\\topdown-clearance-final-faulty")
+    assert status["default_workspace"].endswith("projects\\rgbd-grasp-faulty")
+    assert status["selected_workspace"].endswith("projects\\rgbd-grasp-faulty")
     assert status["image"] == "visiondoctor/ros-gazebo:jazzy-v1"
 
 

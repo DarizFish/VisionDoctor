@@ -12,10 +12,8 @@ HARNESS_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = HARNESS_ROOT.parents[1]
 TEMPLATE_ROOT = HARNESS_ROOT / "demo_project_template"
 DEFAULT_RUNTIME = REPOSITORY_ROOT / ".runtime" / "gazebo-pick-cell"
-# Keep an earlier long-tool worktree intact.  The compact fixture has its own
-# public project workspace so operators can still compare or preserve a prior
-# candidate without silently rewriting it.
-DEFAULT_WORKSPACE = DEFAULT_RUNTIME / "projects" / "topdown-clearance-final-faulty"
+# Keep historical fixed-detection projects intact; the current path consumes RGB-D.
+DEFAULT_WORKSPACE = DEFAULT_RUNTIME / "projects" / "rgbd-grasp-faulty"
 
 # This source stays in the harness process only while a bundle is built.  The
 # generated normal revision is for the operator's before/after demonstration;

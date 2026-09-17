@@ -3,9 +3,46 @@
 这是比赛演示的操作环境，不是产品功能，也不接入诊断 Agent 或产品 API。它把一段真实的
 Gazebo / ROS 2 节拍采集为可人工导出的观察证据包。
 
+**2026-09-12 当前路径：** 感知程序已消费实际采集的 RGB-D，位置不再由控制器预设。
+颜色与已知形状用于估计正立工件的位置，姿态来自工装约束。正常运行
+`run-20260912T082034Z-8d407a4a` 的 A/B 到位误差为 3.326 mm / 2.005 mm，均通过现有容差。
+新几何故障运行 `run-20260912T082922Z-f603527a` 的 A/B 误差为 71.601 mm / 69.053 mm。
+目标深度缺失注入运行 `run-20260912T082341Z-7ad218f4` 中，两件均因感知无位姿而没有发出运动命令。
+注入改变了被感知程序消费的数据，不表示已物理模拟反光或透明材质。
+
+第三轮已加入实际场景遮挡与旧帧消费实验，入口为 `harness.gazebo.scenarios`。
+新深度注入保留 `raw-depth.npy` 与消费的 `depth.npy`，可定位异常发生在传感器输出之后。
+模型修复已在专用副本 `repair-evaluation-20260912` 落地；两次新采集的 A/B 到位均通过。
+运行、误诊与边界见 [第三轮自审](../../design/results/grasp-round3-20260912.md)；
+完整比赛串讲见 [演示指引](../../design/grasp-demo.md)。
+
+**2026-09-16：** 导出清单为每件材料声明 `layer`。程序读写和加载的记录（`parts/*/algorithm/`、`project/`）
+为 `software`，相机与运动记录为 `observation`，诊断产品据此区分软件层证据。此前导出的包可用
+`python -m harness.gazebo.declare_layers <导出目录>` 按同一规则补写；只改 `bundle.json`，材料与摘要不变。
+
 演示顺序固定为：故障项目执行 A/B 抓取并失败 → 导出证据包 → 在另一个项目工作区修复代码
 → 在同一工位复跑并成功。抓取判定采用**到位判定**：机器人执行到命令的法兰位姿，harness
 用私有的工具模型计算 TCP 偏差；没有伪造的物理吸附或搬运。
+
+**2026-09-16 节拍提速（实测）：** 从点击"触发完整 A/B 机器视觉抓取"到机器人开动，由约 13 秒降到约 2 秒；
+A 完成到 B 开动由约 10 秒降到约 1 秒；两件完整节拍由约 70 秒降到约 31–36 秒。到位判定不变，
+修复副本 A/B 误差 2.10 / 1.93 mm。原因与改动：
+
+- **容器 CPU 配额 4 → 12**：Gazebo 的相机与 GUI 都是 CPU 软件渲染，4 核时几乎每个调度周期都被限流，
+  仿真只有约 0.5 倍实时；12 核后约 0.84 倍（仍受软件渲染吞吐限制）。已在运行的容器可用
+  `docker update --cpus 12 pick-cell-harness-gazebo` 生效，新启动的工位自动使用 12 核。
+- **常驻工位代理** `ros/cell_agent.py`：在容器内保持相机订阅与 MoveIt 连接，采集和运动不再每次新起
+  ROS 进程、加载环境和重新发现话题。启动工位或打开操作台时自动拉起。
+- **常驻项目程序进程** `project_worker.py`：感知与指令程序仍按 `python -m` 语义运行项目自己的代码，
+  只复用解释器和第三方库导入；项目代码变动时自动重启。
+- **旁观视频后台写入**：节拍内 RGB-D 落盘即继续，旁观视频在生成证据包前写完。
+  旁观视频现在是 RGB-D 帧之前最近的 10 帧（此前为订阅后收到的前 10 帧），两者都在指令之前。
+- **操作台显示进度**：点击后立即显示"点击到机器人开动"、总用时和每个阶段的耗时，运动阶段显示当前动作。
+
+**Gazebo 窗口不出现时（2026-09-16 实测）：** 如果 WSL 运行期间接入或调整了显示器（尤其是缩放比例不同的多屏），
+WSLg 可能仍在渲染 Gazebo GUI，却不把窗口显示到 Windows 桌面上，缩放 200% 的屏上尤其容易出现。
+执行 `wsl --shutdown`，等 Docker Desktop 自动恢复后重新启动工位即可。工位状态里的 `gazebo_window.visible`
+现在检查的是 Windows 桌面上是否真的有 "Gazebo Sim" 窗口；窗口没有出现时，启动工位会明确报错。
 
 ## 一次性准备
 
@@ -16,7 +53,7 @@ py -3 harness/gazebo/build_demo_project.py
 ```
 
 第一条命令会生成 `harness/gazebo/ur5e_pick_demo.bundle`，其中有一个正常提交和一个故障
-HEAD，并在 `.runtime/gazebo-pick-cell/projects/topdown-clearance-final-faulty` 建立默认可运行工作区。为避免覆盖可能已
+HEAD，并在 `.runtime/gazebo-pick-cell/projects/rgbd-grasp-faulty` 建立默认可运行工作区。为避免覆盖可能已
 修复的工作区，已有默认工作区时该初始化会拒绝覆盖。运行时生成的
 私有评分资料在 `harness/gazebo/private/`，不会写进观察包或 Git bundle。
 
@@ -41,7 +78,7 @@ streamlit run harness/gazebo/console.py --server.address 127.0.0.1 --server.port
 py -3 -m harness.gazebo.cli bootstrap-project
 py -3 -m harness.gazebo.cli start
 py -3 -m harness.gazebo.cli capture
-py -3 -m harness.gazebo.cli run --workspace .runtime/gazebo-pick-cell/projects/topdown-clearance-final-faulty
+py -3 -m harness.gazebo.cli run --workspace .runtime/gazebo-pick-cell/projects/rgbd-grasp-faulty
 py -3 -m harness.gazebo.cli stop
 ```
 
@@ -54,7 +91,7 @@ py -3 -m harness.gazebo.cli stop
 探针提供固定的关节种子以重复求解，抓取目标始终来自所选项目工作区输出的法兰位姿，并以实测关节到位
 作为完成依据。
 
-**已验证（2026-09-02）：** 官方 Gazebo Qt GUI 在 WSLg 中可见；RGB-D 与观察相机采集正常。
+**历史路径已验证（2026-09-02，预设检测位姿）：** 官方 Gazebo Qt GUI 在 WSLg 中可见；RGB-D 与观察相机采集正常。
 低矮双工位和向下抓取的故障运行 `run-20260902T134241Z-59a05bb6` 中，A/B 都完成“预抓点 → 下压 →
 抬起”并被判为 `missed_pick_pose`，位置偏差为 69.086 mm、69.604 mm。故障代码把逆工具补偿重复两次，
 所以 TCP 稳定停在工件上方而非压入工装。使用同一 Git bundle 的正常参考提交复跑
@@ -62,8 +99,10 @@ py -3 -m harness.gazebo.cli stop
 故障包已导出：52 个工件都有时钟字段和匹配的 SHA-256，manifest 不含私有判分词。变更 SDF、工具配置或
 A/B 目标后，必须重新完成这两次真实 MoveIt 验证。
 
-正常参考工作区只用于这次验收：它是演示项目正常提交的独立 Git worktree，**不是 Agent 生成的修复**。
-正式串讲时应复制默认故障工作区，在副本中人工应用候选改动，再在操作台中选择该副本复跑。
+正常参考工作区用于对照，**不是 Agent 生成的修复**。
+本次实际模型修复位于专用实验副本 `repair-evaluation-20260912`，提交为
+`5dac9d5f92ab4b42c5a47a00d06e6e3b808b4e8d`；可以在操作台选择它重新运行。
+重新演示候选生成时使用新的故障副本，避免对已经修复的目录重复应用历史补丁。
 
 ## 边界
 
@@ -74,6 +113,7 @@ A/B 目标后，必须重新完成这两次真实 MoveIt 验证。
   标记程序和导出文件的生成时刻。
 - 导出时仅复核 manifest 已声明的 SHA-256；任何不一致都会停止导出。
 - 私有评分目标、容差、故障答案和正常补丁不被列入 `bundle.json`，也不被复制到导出目录。
+  传感器故障注入标签保存在运行目录之外的 `scenario-labels/`，不导出给产品。
 - 操作台只调用本目录的本地控制器；选择的项目工作区可以是人工或后续 Agent 修复后的副本。
 
 ## 人工验收

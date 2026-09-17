@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from pick_demo.geometry import compose, inverse
+from pick_demo.geometry import compose
+from pick_demo.pipeline import flange_command_for_tcp
 
 
-def test_tool_pose_round_trip_is_not_an_identity_transform() -> None:
+def test_flange_command_reconstructs_requested_tcp() -> None:
     tcp = {"position": [0.5, 0.1, 0.8], "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]}
     tool = {"position": [0.05, 0.0, 0.1], "quaternion_xyzw": [0.0, 0.0, 0.1, 0.995]}
-    command = compose(tcp, tool)
+    command = flange_command_for_tcp(tcp, tool)
     assert command["position"] != tcp["position"]
-    assert compose(command, inverse(tool))["position"] == tcp
+    recovered = compose(command, tool)
+    errors = [abs(a - b) for a, b in zip(recovered["position"], tcp["position"], strict=True)]
+    assert max(errors) < 1e-9

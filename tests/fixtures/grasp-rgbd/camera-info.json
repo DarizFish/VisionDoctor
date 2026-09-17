@@ -1,0 +1,28 @@
+{
+  "frame_id": "rgbd_camera/camera_link/rgbd",
+  "width": 640,
+  "height": 480,
+  "intrinsics": [
+    554.2562584198633,
+    0.0,
+    320.0,
+    0.0,
+    554.2562584198633,
+    240.0,
+    0.0,
+    0.0,
+    1.0
+  ],
+  "distortion": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "stamp_s": 39.01,
+  "rgb_depth_registered": true,
+  "depth_unit": "m",
+  "depth_measurement": "optical_z",
+  "pose_axes": "body_x_forward_y_left_z_up"
+}
