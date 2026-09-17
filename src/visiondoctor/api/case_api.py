@@ -41,6 +41,8 @@ class Project(BaseModel):
     revision: str = ""
     replay_command: list[str]
     test_command: list[str] | None = None
+    #: False when only the released program is available.
+    source_readable: bool = True
 
 
 class Turn(BaseModel):
@@ -107,6 +109,7 @@ def create_case_app(service: CaseService | None = None) -> FastAPI:
             body.revision,
             tuple(body.replay_command),
             tuple(body.test_command) if body.test_command else None,
+            body.source_readable,
         )
 
     @app.post("/api/v1/cases/{case_id}/turns")

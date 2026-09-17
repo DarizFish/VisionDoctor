@@ -19,6 +19,13 @@ class ProjectBinding:
     #: Template with {input}, {output} and {log} placeholders.
     replay_command: tuple[str, ...]
     test_command: tuple[str, ...] | None = None
+    #: False when only the released program is at hand: it can be re-run on
+    #: recorded inputs, but its source is never shown to the investigation.
+    source_readable: bool = True
+
+    @property
+    def runnable(self) -> bool:
+        return bool(self.replay_command)
 
     def replay_command_for(self, source: Path, target: Path, log: Path) -> tuple[str, ...]:
         replacements = {"{input}": str(source), "{output}": str(target), "{log}": str(log)}
