@@ -1,5 +1,10 @@
 # VisionDoctor —— 多模态机器视觉软件诊断与修复智能体
 
+> **当前比赛版本（2026-09-12）**：场景固定为视觉引导抓取，故障覆盖完整任务。
+> 方向见 [抓取诊断计划](design/grasp-diagnosis.md)，实测与自审见 [当前进度](design/PROGRESS.md)，
+> 方案与 Demo 的差距见 [比赛方案草案](design/grasp-competition.md)。
+> 下文保留历史介绍；其中八段链式定界、诊断后才能读源码等描述已由当前设计替代。
+
 > 让机器视觉工程师用一次持续会话，把**现象、代码和现场**连接成可审计的诊断、修复与验证闭环。
 
 从 3C 装配到汽车焊装、从锂电极片到药品包装，视觉系统承担着定位引导、缺陷检测、字符识别、
@@ -123,8 +128,7 @@ VisionDoctor 的诊断证据不只是文字，你可以在同一个会话里持�
 | 操作系统 | Windows + PowerShell | 其他平台未验证 |
 | Python | 3.11 | |
 | Git | 任意近期版本 | 候选补丁在**独立 git worktree** 里复跑，跑完删掉，原仓库检出不动 |
-| 一个 OpenAI 兼容的对话模型 | 必需 | 见下方「配置模型」 |
-| Ollama | 可选 | 只在需要逐张观察现场图片时使用 |
+| 一个 OpenAI 兼容的对话模型 | 必需 | 见下方「配置模型」，支持工具调用即可 |
 | Docker | **不需要** | 诊断与复跑路径不依赖容器 |
 
 ### 安装
@@ -141,22 +145,18 @@ py -3 -m venv .venv
 
 ```text
 VISIONDOCTOR_LLM_API_KEY=<你的密钥>
-VISIONDOCTOR_LLM_BASE_URL=https://api.xiaomimimo.com/v1
-VISIONDOCTOR_LLM_MODEL=mimo-v2.5-pro
+VISIONDOCTOR_LLM_BASE_URL=<服务商的 OpenAI 兼容端点>
+VISIONDOCTOR_LLM_MODEL=<模型标识>
 VISIONDOCTOR_LLM_MAX_TOKENS=32768
 
-VISIONDOCTOR_VISION_BASE_URL=https://api.xiaomimimo.com/v1
-VISIONDOCTOR_VISION_MODEL=mimo-v2.5
+VISIONDOCTOR_VISION_BASE_URL=<可与上面相同>
+VISIONDOCTOR_VISION_MODEL=<模型标识>
 VISIONDOCTOR_VISION_TIMEOUT_S=300
 ```
 
-本次复赛演示用的就是上面这一组（小米 MiMo）。想让图片不出本机，把视觉那三行换成本地
-Ollama 即可，产品侧不用改：
-
-```text
-VISIONDOCTOR_VISION_BASE_URL=http://127.0.0.1:11434
-VISIONDOCTOR_VISION_MODEL=qwen3-vl:4b
-```
+对模型的要求只有两条：**支持工具调用**，且输出长度上限不低于 32768。
+换服务商只改这两个值，产品侧不用动。视觉那三行也可以指向本机推理端点，
+让图片不出本机。
 
 ### 启动
 
@@ -490,8 +490,8 @@ git clone example/robot_cell_vision.bundle robot_cell_vision
 
 | 用途 | 服务 / 模型 | 性质 | 可替代性 |
 |---|---|---|---|
-| 对话、定界、补丁生成 | 小米 MiMo `mimo-v2.5-pro` | 商业闭源 API，按量计费 | 标准 OpenAI 兼容协议，换服务商只改 base URL 与模型标识，无供应商锁定 |
-| 图片观察 | 小米 MiMo `mimo-v2.5` | 商业闭源 API | 可换成本地 Ollama（如 `qwen3-vl:4b`）让图片不出本机，产品侧不改 |
+| 对话、定界、补丁生成 | 任一 OpenAI 兼容模型服务 | 按量计费的商业 API，或自托管开源模型 | 只依赖协议，不依赖任何服务商私有能力；换服务商只改 base URL 与模型标识 |
+| 图片观察 | 同一接口 | 同上 | 可指向本机推理端点，让图片不出本机 |
 | 仿真工位 | ROS 2 Jazzy / Gazebo / MoveIt 2 | 开源 | 只用于产出观察包；换成真实产线导出同样契约的包即可，产品侧不改 |
 | 候选代码执行 | Git worktree + 子进程 | 开源 | 不需要 Docker；执行的是项目自己声明的命令 |
 
