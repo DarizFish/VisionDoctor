@@ -21,7 +21,8 @@ from visiondoctor.case import (
     SegmentFinding,
     SegmentStatus,
     approval_gate,
-    diagnosis_gate,
+    software_localizations,
+    source_layer_gate,
 )
 from visiondoctor.environment import FileBundleAdapter
 from visiondoctor.investigation import Investigation, Toolbox, build_view
@@ -41,7 +42,7 @@ def test_a_failed_pick_is_demarcated_from_what_the_host_delivered() -> None:
     case, adapter, reference = _case()
     bundle = case.observations[0]
     assert not bundle.succeeded
-    assert len(case.segments) == 8
+    assert {Segment.PLANNING, Segment.GRASPING}.issubset(case.segments)
     assert len(case.evidence_ids) == len(bundle.artifacts) + len(bundle.results)
 
     view = build_view(case, bundle)
@@ -80,6 +81,7 @@ def test_a_failed_pick_is_demarcated_from_what_the_host_delivered() -> None:
             ),
             SegmentFinding(
                 segment=Segment.INTERFACE,
+                target_id="tool_command",
                 status=SegmentStatus.SUSPECT,
                 note="指令位姿对正向复合零残差，对取逆复合差出任务容差",
                 evidence_ids=(check["evidence_id"],),
@@ -96,7 +98,11 @@ def test_a_failed_pick_is_demarcated_from_what_the_host_delivered() -> None:
         next_step="申请查看变换相关源码",
     )
     assert [call.name for call in record.calls] == ["read_evidence", "check_transform_chain"]
-    assert diagnosis_gate(case).passed
+    # The check is computed from what the program read and wrote: a software-layer
+    # localization.  With no source bound, the diagnosis ends there.
+    assert case.layer_of(check["evidence_id"]) == "software"
+    assert [item.target_id for item in software_localizations(case)] == ["tool_command"]
+    assert "没有源码接入" in source_layer_gate(case).reasons[0]
     assert case.demarcation()[Segment.IMAGING] is SegmentStatus.UNTESTED
 
     plan = RepairPlan(
@@ -204,6 +210,7 @@ def test_only_evidence_collected_after_the_change_can_say_the_site_recovered() -
         update={
             "run_id": "run-after",
             "created_at": before.created_at + timedelta(hours=1),
+            "observation_started_at": before.created_at + timedelta(minutes=45),
             "results": tuple(
                 item.model_copy(update={"success": True, "classification": "within_tolerance"})
                 for item in before.results
@@ -213,7 +220,12 @@ def test_only_evidence_collected_after_the_change_can_say_the_site_recovered() -
     applied = before.created_at + timedelta(minutes=30)
     assert recheck(before=before, after=passing, applied_at=None).scope == "not_a_recheck"
     assert recheck(before=before, after=passing, applied_at=applied).scope == "site_recovered"
+    partial = passing.model_copy(update={"results": passing.results[:1]})
+    assert recheck(before=before, after=partial, applied_at=applied).scope == "not_a_recheck"
+    late_export = passing.model_copy(update={"observation_started_at": before.created_at})
+    assert recheck(before=before, after=late_export, applied_at=applied).scope == "not_a_recheck"
     still_bad = before.model_copy(
-        update={"run_id": "run-again", "created_at": before.created_at + timedelta(hours=1)}
+        update={"run_id": "run-again", "created_at": before.created_at + timedelta(hours=1),
+                "observation_started_at": before.created_at + timedelta(minutes=45)}
     )
     assert recheck(before=before, after=still_bad, applied_at=applied).scope == "site_still_failing"

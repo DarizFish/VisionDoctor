@@ -35,6 +35,7 @@ def _binding(binding: ProjectBinding | None) -> dict[str, Any] | None:
         "revision": binding.revision,
         "replay_command": list(binding.replay_command),
         "test_command": list(binding.test_command) if binding.test_command else None,
+        "source_readable": binding.source_readable,
     }
 
 
@@ -48,6 +49,10 @@ def _recheck(outcome: Recheck | None) -> dict[str, Any] | None:
         "applied_at": outcome.applied_at.isoformat() if outcome.applied_at else None,
         "before": outcome.before,
         "after": outcome.after,
+        "observation_started_at": (
+            outcome.observation_started_at.isoformat() if outcome.observation_started_at else None
+        ),
+        "context_matches": outcome.context_matches,
     }
 
 
@@ -95,56 +100,71 @@ def load_all(make_record: Any, root: Path = ROOT) -> dict[str, Any]:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        held = payload["case"]
-        case = Case(held["case_id"], held["title"], guided_motion=held["guided_motion"])
-        if held["project"]:
-            case.bind_project(
-                ProjectBinding(
-                    repository=Path(held["project"]["repository"]),
-                    revision=held["project"]["revision"],
-                    replay_command=tuple(held["project"]["replay_command"]),
-                    test_command=(
-                        tuple(held["project"]["test_command"])
-                        if held["project"]["test_command"]
-                        else None
-                    ),
-                )
-            )
-        case.evidence = [Evidence(**item) for item in held["evidence"]]
-        case.findings = [SegmentFinding(**item) for item in held["findings"]]
-        case.hypotheses = [Hypothesis(**item) for item in held["hypotheses"]]
-        case.repair_plans = [RepairPlan(**item) for item in held["repair_plans"]]
-        case.examined = set(held["examined"])
-        case.transcript = held["transcript"]
-
-        record = make_record(case)
-        record.observation_dirs = list(payload["observations"])
-        for directory in record.observation_dirs:
-            adapter = FileBundleAdapter(Path(directory))
-            bundle = adapter.collect()
-            case.observations.append(bundle)
-            if record.bundle is None:
-                record.adapter, record.bundle = adapter, bundle
-        record.turns = [DecisionTurn(**item) for item in payload["turns"]]
-        record.messages = payload["messages"]
-        record.uploads = {key: Path(value) for key, value in payload["uploads"].items()}
-        record.approvals = {
-            key: ApprovalRecord(**value) for key, value in payload["approvals"].items()
-        }
-        record.landings = payload["landings"]
-        record.applied_at = (
-            datetime.fromisoformat(payload["applied_at"]) if payload["applied_at"] else None
-        )
-        if payload["recheck"]:
-            held_recheck = dict(payload["recheck"])
-            held_recheck["after_created_at"] = datetime.fromisoformat(
-                held_recheck["after_created_at"]
-            )
-            held_recheck["applied_at"] = (
-                datetime.fromisoformat(held_recheck["applied_at"])
-                if held_recheck["applied_at"]
-                else None
-            )
-            record.recheck = Recheck(**held_recheck)
-        records[case.case_id] = record
+        try:
+            record = _load_one(payload, make_record, DecisionTurn)
+        except (KeyError, TypeError, ValueError):
+            continue
+        records[record.case.case_id] = record
     return records
+
+
+def _load_one(payload: dict[str, Any], make_record: Any, turn_type: Any) -> Any:
+    """Rebuild one record; a schema mismatch raises and the file is skipped."""
+
+    held = payload["case"]
+    case = Case(held["case_id"], held["title"], guided_motion=held["guided_motion"])
+    if held["project"]:
+        case.bind_project(
+            ProjectBinding(
+                repository=Path(held["project"]["repository"]),
+                revision=held["project"]["revision"],
+                replay_command=tuple(held["project"]["replay_command"]),
+                test_command=(
+                    tuple(held["project"]["test_command"])
+                    if held["project"]["test_command"]
+                    else None
+                ),
+                source_readable=held["project"].get("source_readable", True),
+            )
+        )
+    case.evidence = [Evidence(**item) for item in held["evidence"]]
+    case.findings = [SegmentFinding(**item) for item in held["findings"]]
+    case.hypotheses = [Hypothesis(**item) for item in held["hypotheses"]]
+    case.repair_plans = [RepairPlan(**item) for item in held["repair_plans"]]
+    case.examined = set(held["examined"])
+    case.transcript = held["transcript"]
+
+    record = make_record(case)
+    record.observation_dirs = list(payload["observations"])
+    for directory in record.observation_dirs:
+        adapter = FileBundleAdapter(Path(directory))
+        bundle = adapter.collect()
+        case.observations.append(bundle)
+        if record.bundle is None:
+            record.adapter, record.bundle = adapter, bundle
+    record.turns = [turn_type(**item) for item in payload["turns"]]
+    record.messages = payload["messages"]
+    record.uploads = {key: Path(value) for key, value in payload["uploads"].items()}
+    record.approvals = {
+        key: ApprovalRecord(**value) for key, value in payload["approvals"].items()
+    }
+    record.landings = payload["landings"]
+    record.applied_at = (
+        datetime.fromisoformat(payload["applied_at"]) if payload["applied_at"] else None
+    )
+    if payload["recheck"]:
+        held_recheck = dict(payload["recheck"])
+        held_recheck["after_created_at"] = datetime.fromisoformat(
+            held_recheck["after_created_at"]
+        )
+        held_recheck["applied_at"] = (
+            datetime.fromisoformat(held_recheck["applied_at"])
+            if held_recheck["applied_at"]
+            else None
+        )
+        if held_recheck.get("observation_started_at"):
+            held_recheck["observation_started_at"] = datetime.fromisoformat(
+                held_recheck["observation_started_at"]
+            )
+        record.recheck = Recheck(**held_recheck)
+    return record

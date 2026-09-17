@@ -36,6 +36,10 @@ class Artifact(BundleModel):
     sha256: str
     captured_at: datetime
     clock_domain: str
+    phase: str | None = None
+    #: Declared by the exporter: ``software`` for what the running program read,
+    #: wrote or logged; ``observation`` for sensors, cameras and motion records.
+    layer: str | None = None
 
     @property
     def artifact_id(self) -> str:
@@ -67,6 +71,7 @@ class ObservationBundle(BundleModel):
     created_at: datetime
     clock: Clock
     project_revision: dict[str, str]
+    observation_started_at: datetime | None = None
     timeline: tuple[TimelineEvent, ...] = ()
     results: tuple[TaskResult, ...] = ()
     artifacts: tuple[Artifact, ...] = ()
@@ -79,12 +84,15 @@ class ObservationBundle(BundleModel):
     def cross_source_comparable(self) -> bool:
         """Whether artifacts from different sources may be placed on one axis.
 
-        A collection run comes off one host, so the domains inside it -- sim
-        time and wall clock, say -- relate to each other.  A bundle spanning
-        hosts has to state its alignment error before anything may be compared.
+        A shared host does not align simulation time and UTC. Distinct domains
+        need an explicitly recorded alignment; pairwise tools still require
+        actual timestamp mappings before subtracting across clock domains.
         """
 
-        return bool(self.clock.source) or self.clock.alignment_error_ms is not None
+        domains = self.clock_domains
+        return (bool(domains) and len(domains) == 1 and "" not in domains) or (
+            self.clock.alignment_error_ms is not None and self.clock.alignment_error_ms >= 0
+        )
 
     @property
     def succeeded(self) -> bool:
