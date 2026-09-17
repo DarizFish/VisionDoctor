@@ -87,6 +87,9 @@ class DeclaredMatch:
 class TransformCheck:
     recomputed_tcp: Pose
     commanded_flange: Pose
+    flange_if_tool_forward: Pose
+    flange_if_tool_inverted: Pose
+    command_minus_inverted_flange_m: list[float]
     if_tool_forward: Residual
     if_tool_inverted: Residual
     measured_tcp: Pose | None
@@ -106,6 +109,9 @@ class TransformCheck:
         return {
             "recomputed_tcp": self.recomputed_tcp,
             "commanded_flange": self.commanded_flange,
+            "flange_if_tool_forward": self.flange_if_tool_forward,
+            "flange_if_tool_inverted": self.flange_if_tool_inverted,
+            "command_minus_inverted_flange_m": self.command_minus_inverted_flange_m,
             "residual_if_tool_forward": self.if_tool_forward.as_dict(),
             "residual_if_tool_inverted": self.if_tool_inverted.as_dict(),
             "measured_tcp": self.measured_tcp,
@@ -141,6 +147,7 @@ def check_transform_chain(
     part_in_base = compose(declared["camera_to_base"], _matrix(detection))
     tcp = compose(part_in_base, declared["pick_offset_from_part"])
     command = _matrix(commanded_flange)
+    inverted_flange = compose(tcp, invert(tool))
     measured = compose(_matrix(measured_flange), tool) if measured_flange else None
     landed = measured if measured is not None else compose(command, tool)
     #: What the command implies the TCP will be, against what the chain intended.
@@ -148,6 +155,11 @@ def check_transform_chain(
     return TransformCheck(
         recomputed_tcp=_pose(tcp),
         commanded_flange=_pose(command),
+        flange_if_tool_forward=_pose(compose(tcp, tool)),
+        flange_if_tool_inverted=_pose(inverted_flange),
+        command_minus_inverted_flange_m=[
+            round(float(value), 9) for value in command[:3, 3] - inverted_flange[:3, 3]
+        ],
         if_tool_forward=_residual(command, compose(tcp, tool)),
         if_tool_inverted=_residual(command, compose(tcp, invert(tool))),
         measured_tcp=_pose(measured) if measured is not None else None,

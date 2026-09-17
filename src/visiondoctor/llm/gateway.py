@@ -92,11 +92,11 @@ class OpenAICompatibleGateway:
         body = {
             "model": self.settings.model,
             "messages": messages,
-            "tools": list(tools),
-            "tool_choice": "auto",
             "temperature": 0,
             "max_tokens": self.settings.max_tokens,
         }
+        if tools:
+            body.update({"tools": list(tools), "tool_choice": "auto"})
         request_bytes = json.dumps(body, ensure_ascii=False, sort_keys=True).encode("utf-8")
         started = time.perf_counter()
         try:

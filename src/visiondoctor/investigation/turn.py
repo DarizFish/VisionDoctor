@@ -126,6 +126,10 @@ class Investigation:
         if self._committed:
             raise RuntimeError("this turn is already closed")
         for finding in findings:
+            self.case.validate_finding(finding)
+        for hypothesis in hypotheses:
+            self.case.validate_hypothesis(hypothesis)
+        for finding in findings:
             self.case.record(finding)
         for hypothesis in hypotheses:
             self.case.propose(hypothesis)
