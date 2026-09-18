@@ -652,7 +652,26 @@ class Toolbox:
         binding = self._source_project()
         verdict = repair_gate(self.case, hypothesis_id)
         if not verdict.passed:
-            raise PermissionError("不能提交源码补丁：" + "；".join(verdict.reasons))
+            reasons = list(verdict.reasons)
+            declared = next(
+                (item for item in self.case.hypotheses if item.hypothesis_id == hypothesis_id),
+                None,
+            )
+            if (
+                declared is not None
+                and declared.remedy != "source_patch"
+                and len(reasons) == 1
+            ):
+                # The gate reads remedy mid-turn, but a hypothesis is only written when the
+                # turn returns its conclusion.  Say where the write is, or the model spends
+                # the rest of its budget resubmitting a patch that cannot pass this turn.
+                # Only when remedy is the whole objection: with a second reason standing,
+                # rewriting remedy would not get the patch through either.
+                reasons.append(
+                    "remedy 只能在本轮结论里改：先提交把该假设写为 source_patch 的结论，"
+                    "下一轮再提补丁"
+                )
+            raise PermissionError("不能提交源码补丁：" + "；".join(reasons))
         if not binding.replay_command:
             raise ValueError("项目未提供复跑命令，不能验证候选；请先补充项目运行契约")
         hypothesis = next(

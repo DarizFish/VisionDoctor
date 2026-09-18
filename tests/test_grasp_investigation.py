@@ -119,15 +119,28 @@ def test_source_layer_opens_only_beneath_a_located_software_fault(tmp_path: Path
     with pytest.raises(PermissionError, match="源码层未开放"):
         toolbox.read_source("compute.py", "H1")
 
-    _locate_command_fault(case, adapter, bundle, references, "handoff")
+    output = _locate_command_fault(case, adapter, bundle, references, "handoff")
     names = {item["function"]["name"] for item in tools_for(case)}
     assert {"list_source", "read_source", "propose_repair"} <= names
     with pytest.raises(PermissionError, match="已定位"):
         toolbox.read_source("compute.py", "H9")
     read = toolbox.read_source("compute.py", "H1")
     assert read["layer"] == "source" and '"offset": 1' in read["text"]
-    with pytest.raises(PermissionError, match="不是源码补丁"):
+    with pytest.raises(PermissionError, match="不是源码补丁") as refused:
         toolbox.propose_repair(hypothesis_id="H1", path="compute.py", new_text="", rationale="")
+    # The gate reads remedy mid-turn but a hypothesis is only written when the turn
+    # concludes, so the refusal has to name the way out of that.
+    assert "下一轮再提补丁" in str(refused.value)
+
+    # With a second objection standing, rewriting remedy would not get the patch
+    # through either, so the refusal must not promise that it would.
+    case.propose(Hypothesis(
+        hypothesis_id="H2", target_segment=Segment.ALGORITHM, target_id="perception",
+        statement="感知位姿也可能偏了", evidence_ids=(output,), remedy="handoff",
+    ))
+    with pytest.raises(PermissionError, match="没有软件层定位") as unlocated:
+        toolbox.propose_repair(hypothesis_id="H2", path="compute.py", new_text="", rationale="")
+    assert "下一轮再提补丁" not in str(unlocated.value)
 
     # Source alone neither clears nor implicates anything.
     with pytest.raises(ValueError, match="source alone"):
@@ -143,6 +156,49 @@ def test_source_layer_opens_only_beneath_a_located_software_fault(tmp_path: Path
     }]}, case)[0]
     assert downgraded.status is SegmentStatus.UNTESTED
     assert "只引用了源码" in downgraded.limitations
+
+
+def test_a_refused_patch_is_reported_to_the_model_rather_than_ending_the_turn(
+    tmp_path: Path,
+) -> None:
+    """The refusal has to come back as a tool result.
+
+    Letting it escape ended the turn and left the call in the transcript with no
+    result, which the next turn read as though the patch had been submitted.
+    """
+
+    case, adapter, bundle, references = _bound_case(tmp_path)
+    output = _locate_command_fault(case, adapter, bundle, references, "handoff")
+    gateway = ProtocolDoubleGateway([
+        _turn("propose_repair", {
+            "hypothesis_id": "H1", "path": "compute.py",
+            "new_text": "print('patched')\n", "rationale": "少一次工具补偿",
+        }, 1),
+        _answer({
+            "findings": [{
+                "target_id": "tool_command", "status": "suspect",
+                "evidence_ids": [output], "note": "记录的法兰指令偏离期望",
+                "checked_scope": "A 的指令与期望对照", "limitations": "尚未读源码",
+            }],
+            "hypotheses": [{
+                "hypothesis_id": "H2", "target_id": "tool_command",
+                "statement": "指令计算多加了一次工具补偿", "evidence_ids": [output],
+                "prediction": "改回一次补偿后偏差消失", "next_check": "提交源码补丁并复跑",
+                "remedy": "source_patch",
+            }],
+            "next_step": "按源码补丁重新提交",
+        }),
+    ])
+    turn = investigate(
+        case=case, adapter=adapter, bundle=bundle, prompt="源码已连接，请修复",
+        gateway=gateway, sandbox_root=tmp_path / "sandbox",
+    )
+
+    assert turn.hypotheses[0].remedy == "source_patch"
+    assert not case.repair_plans          # the gate still refused the patch
+    refusals = [message for message in case.transcript
+                if message.get("role") == "tool" and "不能提交源码补丁" in message["content"]]
+    assert len(refusals) == 1
 
 
 def test_released_program_is_replayed_without_ever_opening_source(tmp_path: Path) -> None:

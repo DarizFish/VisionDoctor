@@ -255,7 +255,11 @@ def investigate(
         for call in answer.tool_calls:
             try:
                 result: Any = turn.invoke(call.name, **call.arguments)
-            except (KeyError, ValueError, RuntimeError, TypeError) as exc:
+            except (KeyError, ValueError, RuntimeError, TypeError, PermissionError) as exc:
+                # A gate refusal is an answer, not a crash: hand it back so the model
+                # can take the other way out. Letting it escape ended the turn and
+                # left the call in the transcript with no result, which read to the
+                # next turn as though the refused action had gone through.
                 result = {"error": f"{type(exc).__name__}: {exc}"}
             messages.append(
                 {
