@@ -358,12 +358,27 @@ def _encode(files: list[Any]) -> list[dict[str, str]]:
     return encoded
 
 
+def _send(path: str, payload: dict[str, Any]) -> str | None:
+    """Hand the error back instead of drawing it. The caller runs after both
+    columns, where the page is clipped and an st.error would never be seen."""
+    try:
+        _api(path, method="POST", payload=payload)
+    except (RuntimeError, urllib.error.URLError) as exc:
+        return str(exc)
+    return None
+
+
 def _submit(case_id: str, prompt: str, files: list[Any]) -> None:
     uploads = _encode(files)
-    if uploads and not _post(f"/api/v1/cases/{case_id}/attachments", {"files": uploads}):
-        return
-    if _post(f"/api/v1/cases/{case_id}/turns", {"prompt": prompt}):
-        st.rerun()
+    refused = None
+    if uploads:
+        refused = _send(f"/api/v1/cases/{case_id}/attachments", {"files": uploads})
+    if refused is None:
+        refused = _send(f"/api/v1/cases/{case_id}/turns", {"prompt": prompt})
+    if refused:
+        # Carried to the next run so it can be shown inside the conversation.
+        st.session_state["refused"] = refused
+    st.rerun()
 
 
 # ---- right column ------------------------------------------------------------------
@@ -1032,6 +1047,9 @@ def main() -> None:
             _render_messages(case_id, view)
             if view.get("running"):
                 _render_running(case_id)
+            refused = st.session_state.pop("refused", None)
+            if refused:
+                st.error(refused)
         _scroll_conversation_to_latest(
             f"{case_id}:{len(view.get('messages') or [])}:{view.get('running')}"
         )

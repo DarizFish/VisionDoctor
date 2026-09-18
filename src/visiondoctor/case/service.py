@@ -245,8 +245,9 @@ class CaseService:
         """Start a turn and return at once; the work is watched, not waited on."""
 
         record = self.record(case_id)
-        if record.bundle is None and not record.uploads:
-            raise ValueError("这个案件还没有任何材料：先附上证据包或上传图片、日志")
+        # A case with nothing in it still gets a turn: with no evidence the model
+        # has nothing to claim, so it answers and says what it would need. Refusing
+        # here made an ordinary question look like a broken page.
         if record.running is not None:
             raise ValueError("这个案件正在推进中，等这一轮结束再说下一句")
         if record.case.title == "新的诊断":
