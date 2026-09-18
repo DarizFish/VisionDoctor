@@ -28,7 +28,12 @@
   <!-- Mounted on the flange with the 0.02 rad seating yaw the tool profile
        declares.  A 6 mm tool plate gap keeps the palm off the wrist_3 mesh,
        which MoveIt would otherwise report as a permanent self-collision.
-       The compact palm and fingers finish at the 35 mm grasp centre. -->
+       Palm spans 0 to 28 mm along tool0 z, fingers 19 to 63 mm, and the grasp
+       centre stays at 35 mm.  The fingers reach past the grasp centre so that
+       on arrival they straddle the sides of a part rather than stopping above
+       it - appearance only.  tool0_to_tcp is unchanged and still the number in
+       the project's tool_profile.yaml; no arrival measurement depends on how
+       far the fingers extend. -->
   <joint name="pick_tool_joint" type="fixed">
     <origin xyz="0 0 0" rpy="0 0 0.0199997"/>
     <parent link="tool0"/>
@@ -51,13 +56,13 @@
       <material name="pick_tool_body"/>
     </visual>
     <visual name="finger_left">
-      <origin xyz="0 0.034 0.034"/>
-      <geometry><box size="0.016 0.012 0.030"/></geometry>
+      <origin xyz="0 0.034 0.041"/>
+      <geometry><box size="0.016 0.012 0.044"/></geometry>
       <material name="pick_tool_finger"/>
     </visual>
     <visual name="finger_right">
-      <origin xyz="0 -0.034 0.034"/>
-      <geometry><box size="0.016 0.012 0.030"/></geometry>
+      <origin xyz="0 -0.034 0.041"/>
+      <geometry><box size="0.016 0.012 0.044"/></geometry>
       <material name="pick_tool_finger"/>
     </visual>
     <!-- Arrival at the TCP is the grasp criterion for this demonstration.
