@@ -75,28 +75,6 @@ class CandidateKind(StrEnum):
     ROOT_CAUSE_FIX = "root_cause_fix"
 
 
-class WorkflowState(StrEnum):
-    NEW = "NEW"
-    CONTEXT_CHECKING = "CONTEXT_CHECKING"
-    NEED_MORE_INFORMATION = "NEED_MORE_INFORMATION"
-    REPRODUCING = "REPRODUCING"
-    NOT_REPRODUCED = "NOT_REPRODUCED"
-    INFRA_ERROR = "INFRA_ERROR"
-    DIAGNOSING = "DIAGNOSING"
-    COLLECT_MORE_EVIDENCE = "COLLECT_MORE_EVIDENCE"
-    ROOT_CAUSE_CONFIRMED = "ROOT_CAUSE_CONFIRMED"
-    PATCH_GENERATING = "PATCH_GENERATING"
-    VERIFYING = "VERIFYING"
-    PATCH_REJECTED = "PATCH_REJECTED"
-    ROLLED_BACK = "ROLLED_BACK"
-    AWAITING_TECHNICAL_REVIEW = "AWAITING_TECHNICAL_REVIEW"
-    AWAITING_HUMAN_APPROVAL = "AWAITING_HUMAN_APPROVAL"
-    REJECTED_BY_HUMAN = "REJECTED_BY_HUMAN"
-    ADDITIONAL_TESTING = "ADDITIONAL_TESTING"
-    PR_READY = "PR_READY"
-    POSTMORTEM_COMPLETED = "POSTMORTEM_COMPLETED"
-
-
 class PoseTransform(FrozenModel):
     """Rigid transform following the frozen T_target_source convention."""
 
@@ -475,18 +453,3 @@ class ValidationReport(FrozenModel):
         if not value:
             raise ValueError("validation report must reference supporting evidence")
         return value
-
-
-class DiagnosisReport(FrozenModel):
-    diagnosis_id: str
-    incident_id: str
-    root_cause: str = Field(min_length=1, max_length=4000)
-    confirmed: bool
-    confidence: float = Field(ge=0, le=1)
-    evidence_refs: tuple[str, ...] = Field(min_length=1)
-    observations: tuple[str, ...] = Field(min_length=1)
-    counterfactual_rmse_m: float | None = Field(default=None, ge=0)
-    faulty_match_rmse_m: float | None = Field(default=None, ge=0)
-    suspicious_diff: str
-    recommended_fix: str = ""
-    model: str = Field(default="", max_length=200)

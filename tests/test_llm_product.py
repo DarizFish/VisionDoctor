@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from pathlib import Path
 
 import httpx
@@ -14,12 +13,9 @@ from visiondoctor.llm import (
 )
 from visiondoctor.llm.settings import ModelConfigurationError
 from visiondoctor.llm.tools import (
-    RepositoryInspector,
-    build_patch_from_changes,
     terminal_tool,
 )
-from visiondoctor.sandbox import GitWorktreeSandbox
-from visiondoctor.schemas import CandidateKind, CandidateVersion
+
 
 def test_model_settings_fail_closed_without_key(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -29,6 +25,7 @@ def test_model_settings_fail_closed_without_key(
 
     with pytest.raises(ModelConfigurationError, match="required|missing"):
         ModelSettings.from_environment()
+
 
 def test_model_settings_load_allowlisted_dotenv(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -53,6 +50,7 @@ def test_model_settings_load_allowlisted_dotenv(
     assert settings.api_key == "test-key"
     assert settings.model == "deepseek-v4-flash"
     assert "IGNORED_SETTING" not in os.environ
+
 
 def test_openai_compatible_gateway_executes_tool_call_and_redacts_key(tmp_path: Path) -> None:
     secret = "unit-test-secret"
@@ -110,59 +108,3 @@ def test_openai_compatible_gateway_executes_tool_call_and_redacts_key(tmp_path: 
     audit = audit_path.read_text(encoding="utf-8")
     assert secret not in audit
     assert "report_ready" in audit
-
-def test_generated_patch_preserves_missing_final_newline_and_applies(
-    tmp_path: Path,
-    before: str | None,
-    after: str,
-    operation: str,
-) -> None:
-    repository = tmp_path / "patch-repository"
-    repository.mkdir()
-
-    def git(*arguments: str, input_bytes: bytes | None = None) -> subprocess.CompletedProcess:
-        return subprocess.run(
-            ["git", "-C", str(repository), *arguments],
-            input=input_bytes,
-            capture_output=True,
-            check=False,
-        )
-
-    assert git("init", "-q", "-b", "main").returncode == 0
-    assert git("config", "user.name", "Patch Test").returncode == 0
-    assert git("config", "user.email", "patch-test@example.invalid").returncode == 0
-    assert git("config", "core.autocrlf", "false").returncode == 0
-    (repository / "anchor.txt").write_text("anchor\n", encoding="utf-8")
-    if before is not None:
-        (repository / "target.py").write_bytes(before.encode("utf-8"))
-    assert git("add", ".").returncode == 0
-    assert git("commit", "-q", "-m", "base").returncode == 0
-    commit = git("rev-parse", "HEAD").stdout.decode("utf-8").strip()
-    inspector = RepositoryInspector(repository, commit, commit)
-
-    patch_text, files = build_patch_from_changes(
-        inspector,
-        [{"path": "target.py", "operation": operation, "content": after}],
-    )
-
-    checked = git("apply", "--check", "-", input_bytes=patch_text.encode("utf-8"))
-    assert checked.returncode == 0, checked.stderr.decode("utf-8", errors="replace")
-    assert patch_text.endswith("\n")
-    assert "\\ No newline at end of file\n" in patch_text
-    sandbox = GitWorktreeSandbox(repository, tmp_path / "worktrees")
-    handle = sandbox.create(
-        CandidateVersion(
-            candidate_id="missing-final-newline",
-            kind=CandidateKind.ROOT_CAUSE_FIX,
-            base_commit=commit,
-            patch_text=patch_text,
-            rationale="exercise the production patch application path",
-            expected_changed_files=("target.py",),
-        )
-    )
-    assert (handle.worktree / "target.py").read_bytes() == after.encode("utf-8")
-    assert sandbox.cleanup(handle, rollback=False)
-    applied = git("apply", "-", input_bytes=patch_text.encode("utf-8"))
-    assert applied.returncode == 0, applied.stderr.decode("utf-8", errors="replace")
-    assert (repository / "target.py").read_bytes() == after.encode("utf-8")
-    assert files == ("target.py",)

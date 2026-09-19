@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import ProtocolDoubleGateway, _turn
+from tests.support import ProtocolDoubleGateway, _turn
 from tests.test_case_walkthrough import _case, _tiny_project
 from visiondoctor.case import CaseService, Hypothesis, Segment, SegmentFinding, SegmentStatus
 from visiondoctor.case.graph import EDGES, NODES, graph_view

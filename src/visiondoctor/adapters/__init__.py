@@ -9,8 +9,6 @@ from visiondoctor.adapters.base import (
     RuntimeHandle,
     ValidationBackend,
 )
-from visiondoctor.adapters.dataset import DatasetEvidenceProvider, DatasetReferenceProvider
-from visiondoctor.adapters.dataset_execution import DatasetExecutionBackend
 from visiondoctor.adapters.gazebo import (
     GazeboAdapter,
     GazeboContractResult,
@@ -22,9 +20,6 @@ __all__ = [
     "AdapterUnavailableError",
     "CandidateReleaseGate",
     "CaseContext",
-    "DatasetEvidenceProvider",
-    "DatasetExecutionBackend",
-    "DatasetReferenceProvider",
     "EvidenceProvider",
     "ExecutionBackend",
     "ExternalGateResult",

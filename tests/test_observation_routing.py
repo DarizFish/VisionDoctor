@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from harness.gazebo.controller import PickCellController
-from tests.conftest import ProtocolDoubleGateway, _turn
+from tests.support import ProtocolDoubleGateway, _turn
 from tests.test_grasp_investigation import _answer
 from tests.test_grasp_scenarios import capture_at
 from visiondoctor.case import CaseService
