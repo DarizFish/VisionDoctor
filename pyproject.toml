@@ -42,9 +42,6 @@ packages = ["src/visiondoctor"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]
-markers = [
-  "integration: exercises installed external infrastructure such as Docker and Gazebo",
-]
 
 [tool.ruff]
 line-length = 100
