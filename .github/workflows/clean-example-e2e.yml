@@ -1,0 +1,348 @@
+name: clean-example-e2e
+
+on:
+  push:
+    branches: [finals-prep]
+    paths:
+      - ".github/workflows/clean-example-e2e.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  example-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install from clean checkout
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,api]"
+
+      - name: Core regression slice
+        run: |
+          pytest -q tests/test_case_walkthrough.py tests/test_grasp_investigation.py tests/test_structural_diagnosis.py
+
+      - name: Restore example project bundle
+        run: |
+          rm -rf /tmp/pick-a17-project
+          git clone example/pick-a17-project.bundle /tmp/pick-a17-project
+          git -C /tmp/pick-a17-project rev-parse --verify c13954fc031e16f23d2a21de0b7856f169c80109^{commit}
+
+      - name: Run clean example diagnosis through Case API
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import sys
+          import time
+          from pathlib import Path
+
+          from fastapi.testclient import TestClient
+
+          import visiondoctor.case.service as service_module
+          from visiondoctor.api.case_api import create_case_app
+          from visiondoctor.case import CaseService
+          from visiondoctor.llm import AssistantTurn, ToolCall
+
+
+          def tool_turn(name: str, arguments: dict, index: int) -> AssistantTurn:
+              call_id = f"clean-e2e-{index}"
+              return AssistantTurn(
+                  content="",
+                  tool_calls=(ToolCall(call_id=call_id, name=name, arguments=arguments),),
+                  finish_reason="tool_calls",
+                  raw_message={
+                      "role": "assistant",
+                      "content": None,
+                      "tool_calls": [
+                          {
+                              "id": call_id,
+                              "type": "function",
+                              "function": {
+                                  "name": name,
+                                  "arguments": json.dumps(arguments, ensure_ascii=False),
+                              },
+                          }
+                      ],
+                  },
+              )
+
+
+          def answer(payload: dict) -> AssistantTurn:
+              content = json.dumps(payload, ensure_ascii=False)
+              return AssistantTurn(
+                  content=content,
+                  tool_calls=(),
+                  finish_reason="stop",
+                  raw_message={"role": "assistant", "content": content},
+              )
+
+
+          class StructuralGateway:
+              model = "clean-e2e-structural"
+
+              def __init__(self, refs: dict[str, str]) -> None:
+                  self.refs = refs
+                  self.calls = 0
+                  self.structural_evidence_id: str | None = None
+                  self.isolation: dict | None = None
+
+              def complete(self, messages, tools):
+                  self.calls += 1
+                  if self.calls == 1:
+                      names = {item["function"]["name"] for item in tools}
+                      assert "structural_diagnose" in names
+                      return tool_turn(
+                          "structural_diagnose",
+                          {
+                              "template_ids": ["geometry_chain"],
+                              "part_id": "A",
+                              "bindings": {
+                                  "detection": self.refs["parts/A/algorithm/input.json"],
+                                  "calibration": self.refs["project/cell_calibration.yaml"],
+                                  "tool": self.refs["project/tool_profile.yaml"],
+                                  "command": self.refs["parts/A/algorithm/output.json"],
+                                  "motion": self.refs["parts/A/motion.json"],
+                                  "result": self.refs["parts/A/result.json"],
+                              },
+                          },
+                          1,
+                      )
+                  result = json.loads(messages[-1]["content"])
+                  assert "error" not in result, result
+                  assert result["part_id"] == "A"
+                  statuses = {row["test"]: row["status"] for row in result["tests"]}
+                  assert statuses["A"] == "violated", statuses
+                  assert statuses["B"] == "passed", statuses
+                  assert statuses["C"] == "passed", statuses
+                  candidates = set(result["isolation"]["candidates"])
+                  assert any(item.split(".", 1)[0] == "interface" for item in candidates), result
+                  self.structural_evidence_id = result["evidence_id"]
+                  self.isolation = result["isolation"]
+                  return answer(
+                      {
+                          "findings": [
+                              {
+                                  "target_id": "tool_command",
+                                  "status": "suspect",
+                                  "evidence_ids": [self.structural_evidence_id],
+                                  "note": "结构核算显示记录指令违反几何指令关系，运动跟踪和到位内部一致。",
+                                  "checked_scope": "PICK-A17 工件 A：感知、标定、工具、指令、运动和到位记录",
+                                  "limitations": "软件层已定位到指令计算/接口，源码尚未读取。",
+                              }
+                          ],
+                          "hypotheses": [
+                              {
+                                  "hypothesis_id": "H1",
+                                  "target_id": "tool_command",
+                                  "statement": "TCP 到法兰的工具补偿方向或次数存在实现错误。",
+                                  "evidence_ids": [self.structural_evidence_id],
+                                  "prediction": "运行版本中生成 commanded_flange_base 的实现会与 T_base_flange = T_base_tcp @ inverse(T_flange_tcp) 不一致。",
+                                  "next_check": "读取运行版本中生成法兰指令的源码。",
+                                  "remedy": "source_patch",
+                              }
+                          ],
+                          "next_step": "软件层已把异常隔离到指令计算与接口；进入源码层解释实现机制。",
+                      }
+                  )
+
+
+          class SourceGateway:
+              model = "clean-e2e-source"
+
+              def __init__(self, structural_id: str) -> None:
+                  self.structural_id = structural_id
+                  self.calls = 0
+                  self.queue: list[str] = []
+                  self.source_evidence_id: str | None = None
+                  self.source_path: str | None = None
+
+              def complete(self, messages, tools):
+                  self.calls += 1
+                  names = {item["function"]["name"] for item in tools}
+                  assert {"list_source", "read_source"} <= names
+                  if self.calls == 1:
+                      return tool_turn("list_source", {}, 100)
+                  last = json.loads(messages[-1]["content"])
+                  assert "error" not in last, last
+                  if "paths" in last:
+                      paths = [p for p in last["paths"] if p.endswith(".py")]
+                      preferred = [
+                          p for p in paths
+                          if any(key in p.lower() for key in ("geometry", "pipeline", "replay", "perception"))
+                      ]
+                      rest = [p for p in paths if p not in preferred]
+                      self.queue = preferred + rest
+                  else:
+                      text = str(last.get("text") or "")
+                      if any(token in text for token in ("tool0_to_tcp", "commanded_flange_base", "inverse", "invert")):
+                          self.source_evidence_id = last["evidence_id"]
+                          self.source_path = last["path"]
+                          return answer(
+                              {
+                                  "findings": [
+                                      {
+                                          "target_id": "tool_command",
+                                          "status": "suspect",
+                                          "evidence_ids": [self.structural_id, self.source_evidence_id],
+                                          "note": "运行记录先把异常隔离到法兰指令计算；对应运行版本源码显示工具补偿实现位于同一交接路径。",
+                                          "checked_scope": "结构残差 + 运行版本源码实现",
+                                          "limitations": "结论只覆盖该运行版本与记录输入，不外推到现场恢复。",
+                                      }
+                                  ],
+                                  "hypotheses": [
+                                      {
+                                          "hypothesis_id": "H1",
+                                          "target_id": "tool_command",
+                                          "statement": "运行版本中的 TCP/法兰工具补偿实现导致记录的 commanded_flange_base 偏离结构约束。",
+                                          "evidence_ids": [self.structural_id, self.source_evidence_id],
+                                          "prediction": "修正该实现后，用同一记录输入隔离复跑时指令一致残差应回到阈值内。",
+                                          "next_check": "形成候选修复并在记录输入上隔离复跑。",
+                                          "remedy": "source_patch",
+                                      }
+                                  ],
+                                  "next_step": f"源码机制已定位到 {self.source_path}；下一步生成候选修复并隔离复跑。",
+                              }
+                          )
+                  assert self.queue, "no Python source file left to inspect"
+                  path = self.queue.pop(0)
+                  return tool_turn(
+                      "read_source",
+                      {"path": path, "hypothesis_id": "H1"},
+                      100 + self.calls,
+                  )
+
+
+          def wait_case(client: TestClient, case_id: str, timeout_s: float = 20.0) -> dict:
+              deadline = time.time() + timeout_s
+              while time.time() < deadline:
+                  response = client.get(f"/api/v1/cases/{case_id}")
+                  assert response.status_code == 200, response.text
+                  view = response.json()
+                  if view["running"] is None:
+                      return view
+                  time.sleep(0.1)
+              raise AssertionError("diagnosis turn did not finish in time")
+
+
+          runtime = Path(".runtime/clean-example-e2e")
+          service = CaseService(runtime / "cases")
+          client = TestClient(create_case_app(service))
+
+          created = client.post(
+              "/api/v1/cases",
+              json={"title": "PICK-A17 example clean-room diagnosis", "guided_motion": True},
+          )
+          assert created.status_code == 201, created.text
+          case_id = created.json()["case_id"]
+
+          observation_dir = Path("example/pick-a17-run").resolve()
+          attached = client.post(
+              f"/api/v1/cases/{case_id}/observations",
+              json={"directory": str(observation_dir)},
+          )
+          assert attached.status_code == 200, attached.text
+          assert attached.json()["run_id"] == "run-20260912T082922Z-f603527a"
+
+          project_dir = Path("/tmp/pick-a17-project").resolve()
+          bound = client.post(
+              f"/api/v1/cases/{case_id}/project",
+              json={
+                  "repository": str(project_dir),
+                  "revision": "",
+                  "replay_command": [
+                      sys.executable,
+                      "-m",
+                      "pick_demo.replay",
+                      "--input",
+                      "{input}",
+                      "--output",
+                      "{output}",
+                      "--log",
+                      "{log}",
+                  ],
+                  "source_readable": True,
+              },
+          )
+          assert bound.status_code == 200, bound.text
+          assert bound.json()["revision"] == "c13954fc031e16f23d2a21de0b7856f169c80109"
+          assert bound.json()["runnable"] is True
+
+          record = service.record(case_id)
+          refs = {
+              item.reference: item.evidence_id
+              for item in record.case.evidence
+              if item.bundle_id == record.bundle.run_id
+          }
+          required = {
+              "parts/A/algorithm/input.json",
+              "parts/A/algorithm/output.json",
+              "parts/A/motion.json",
+              "parts/A/result.json",
+              "project/cell_calibration.yaml",
+              "project/tool_profile.yaml",
+          }
+          assert required <= refs.keys(), sorted(required - refs.keys())
+
+          structural_gateway = StructuralGateway(refs)
+          service_module._model_gateway = lambda: structural_gateway
+          service_module._vision_gateway = lambda: None
+          started = client.post(
+              f"/api/v1/cases/{case_id}/turns",
+              json={"prompt": "A、B 两件都偏约 7 厘米。请基于这次运行证据定位异常。"},
+          )
+          assert started.status_code == 200, started.text
+          first = wait_case(client, case_id)
+          assert first["turns"], first
+          assert first["gates"]["source_layer"]["passed"] is True, first["gates"]
+          assert any(
+              item["target_id"] == "tool_command" and item["status"] == "suspect"
+              for item in first["graph"]["edges"]
+          )
+          assert structural_gateway.structural_evidence_id
+
+          source_gateway = SourceGateway(structural_gateway.structural_evidence_id)
+          service_module._model_gateway = lambda: source_gateway
+          started = client.post(
+              f"/api/v1/cases/{case_id}/turns",
+              json={"prompt": "继续读取与已定位接口异常对应的运行版本源码，解释实现机制。"},
+          )
+          assert started.status_code == 200, started.text
+          second = wait_case(client, case_id)
+          assert len(second["turns"]) == 2, second["turns"]
+          assert source_gateway.source_evidence_id, second
+          assert source_gateway.source_path, second
+          assert any(item["layer"] == "source" and item["examined"] for item in second["evidence"])
+          assert second["hypotheses"][0]["hypothesis_id"] == "H1"
+          assert second["hypotheses"][0]["remedy"] == "source_patch"
+          assert not any("这一轮没有走完" in str(m.get("content")) for m in second["messages"])
+
+          summary = {
+              "case_id": case_id,
+              "run_id": second["observation"]["run_id"],
+              "revision": second["project"]["revision"],
+              "structural_isolation": structural_gateway.isolation,
+              "source_layer_open": second["gates"]["source_layer"]["passed"],
+              "source_path": source_gateway.source_path,
+              "turn_1_calls": [call["name"] for call in second["turns"][0]["calls"]],
+              "turn_2_calls": [call["name"] for call in second["turns"][1]["calls"]],
+              "finding": next(
+                  edge["finding"] for edge in second["graph"]["edges"]
+                  if edge["id"] == "tool_command"
+              ),
+              "next_step": second["messages"][-1]["content"],
+          }
+          print(json.dumps(summary, ensure_ascii=False, indent=2))
+          print("CLEAN_EXAMPLE_E2E_OK")
+          PY
