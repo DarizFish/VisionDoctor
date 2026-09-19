@@ -315,7 +315,7 @@ jobs:
           assert first["turns"], first
           assert first["gates"]["source_layer"]["passed"] is True, first["gates"]
           assert any(
-              item["target_id"] == "tool_command" and item["status"] == "suspect"
+              item["id"] == "tool_command" and item["status"] == "suspect"
               for item in first["graph"]["edges"]
           )
           assert structural_gateway.structural_evidence_id
