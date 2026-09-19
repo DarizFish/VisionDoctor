@@ -125,9 +125,9 @@ jobs:
                   assert "error" not in result, result
                   assert result["part_id"] == "A"
                   statuses = {row["test"]: row["status"] for row in result["tests"]}
-                  assert statuses["A"] == "violated", statuses
-                  assert statuses["B"] == "passed", statuses
-                  assert statuses["C"] == "passed", statuses
+                  assert statuses["A"] == "fail", statuses
+                  assert statuses["B"] == "pass", statuses
+                  assert statuses["C"] == "pass", statuses
                   candidates = set(result["isolation"]["candidates"])
                   assert any(item.split(".", 1)[0] == "interface" for item in candidates), result
                   self.structural_evidence_id = result["evidence_id"]
