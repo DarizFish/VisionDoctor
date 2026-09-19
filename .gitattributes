@@ -15,6 +15,7 @@
 *.docx    binary
 *.xlsx    binary
 *.npy     binary
+*.npz     binary
 *.bundle  binary
 *.ico     binary
 *.woff    binary

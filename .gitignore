@@ -33,6 +33,10 @@ submission/
 
 # 复赛录屏原始素材（约 1 GB），不进仓库
 复赛资料/
+
+# 答辩与汇报的个人草稿，只留在本地磁盘
 储备.md
+ppt脚本.md
+专家建议.md
 # Finals materials handed out by the organisers (templates, fonts, PDFs; ~51 MB)
 final/
