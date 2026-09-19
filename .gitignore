@@ -31,6 +31,14 @@ submission/
 # Technical design spec, delivered as a document rather than through the repo.
 *.docx
 
+# 方案、进展、实验记录与演示留痕，同样作为文档交付，不随代码仓库分发。
+# 文件留在本地磁盘，只是不再跟踪。
+design/
+docs/
+
+# 团队内部的协作约束，只对持有完整工作副本的人有效。
+AGENTS.md
+
 # 复赛录屏原始素材（约 1 GB），不进仓库
 复赛资料/
 
