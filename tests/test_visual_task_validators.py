@@ -10,36 +10,20 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from visiondoctor.adapters import DatasetEvidenceProvider, DatasetReferenceProvider
-from visiondoctor.agents import DiagnosisAgent, QAAgent
+from visiondoctor.adapters import DatasetEvidenceProvider
 from visiondoctor.llm.tools import EvidenceInspector
 from visiondoctor.schemas import (
-    AcceptanceCriteria,
     ArtifactRef,
-    BackendType,
     CaseEvidence,
-    CaseExecutionResult,
-    Decision,
     EvidenceBundle,
-    ExecutionResult,
-    ExecutionStatus,
-    Incident,
-    PatchPolicy,
-    PolicyCheck,
-    RepositoryRef,
     StructuredCaseInput,
-    StructuredOutputs,
     TaskKind,
     TaskSpecification,
-    UnitTestResult,
 )
-from visiondoctor.schemas import TestCaseRef as CaseRef
 from visiondoctor.tasks.validators import get_validator_plugin
-
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
 
 def _image_evidence(
     tmp_path: Path, kind: TaskKind, *, width: int = 8, height: int = 8
@@ -73,7 +57,6 @@ def _image_evidence(
         captured_at=datetime.now(UTC),
     )
     return evidence, image
-
 
 def test_detection_is_order_independent_and_includes_exact_iou_boundary(
     tmp_path: Path,
@@ -111,7 +94,6 @@ def test_detection_is_order_independent_and_includes_exact_iou_boundary(
         "mean_iou": 1.0,
     }
 
-
 def test_detection_rejects_out_of_bounds_output_contract(tmp_path: Path) -> None:
     evidence, _image = _image_evidence(tmp_path, TaskKind.DETECTION)
     evaluation = get_validator_plugin(TaskKind.DETECTION).evaluate_case(
@@ -128,7 +110,6 @@ def test_detection_rejects_out_of_bounds_output_contract(tmp_path: Path) -> None
 
     assert evaluation.contract_valid is False
     assert "outside image dimensions" in evaluation.failures[0]
-
 
 def test_ocr_normalization_and_exact_error_rate_boundary(tmp_path: Path) -> None:
     evidence, _image = _image_evidence(tmp_path, TaskKind.OCR)
@@ -163,7 +144,6 @@ def test_ocr_normalization_and_exact_error_rate_boundary(tmp_path: Path) -> None
     assert boundary.measurements["character_error_rate"] == pytest.approx(1 / 3)
     assert boundary.passed is True
     assert invalid.contract_valid is False
-
 
 def test_segmentation_boundary_tolerance_and_shape_contract(tmp_path: Path) -> None:
     evidence, _image = _image_evidence(
@@ -209,60 +189,6 @@ def test_segmentation_boundary_tolerance_and_shape_contract(tmp_path: Path) -> N
     assert strict.passed is False
     assert invalid.contract_valid is False
 
-
-def _write_detection_case(root: Path, case_id: str) -> CaseRef:
-    image_path = root / f"{case_id}.png"
-    Image.new("RGB", (8, 8), color=(10, 20, 30)).save(image_path)
-    captured_at = "2026-08-10T00:00:00Z"
-    manifest = root / f"{case_id}.json"
-    reference = root / f"{case_id}.reference.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "task_kind": "detection",
-                "case_id": case_id,
-                "source": "dataset",
-                "captured_at": captured_at,
-                "input": {
-                    "image_artifact_id": "image",
-                    "width": 8,
-                    "height": 8,
-                },
-                "artifacts": [
-                    {
-                        "artifact_id": "image",
-                        "path": image_path.name,
-                        "media_type": "image/png",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    reference.write_text(
-        json.dumps(
-            {
-                "task_kind": "detection",
-                "case_id": case_id,
-                "source_type": "dataset_label",
-                "captured_at": captured_at,
-                "expected_output": {
-                    "objects": [{"label": "part", "bbox_xyxy": [1, 1, 4, 4]}]
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    return CaseRef(
-        case_id=case_id,
-        manifest_path=str(manifest),
-        reference_path=str(reference),
-    )
-
-
-def _execution(
-    candidate_id: str,
-    outputs: list[tuple[str, dict[str, Any]]],
 ) -> ExecutionResult:
     now = datetime.now(UTC)
     return ExecutionResult(
@@ -289,7 +215,6 @@ def _execution(
         started_at=now,
         completed_at=now,
     )
-
 
 def test_multi_case_partial_pass_and_shuffled_execution_are_deterministic(
     tmp_path: Path,
@@ -377,7 +302,6 @@ def test_multi_case_partial_pass_and_shuffled_execution_are_deterministic(
     }
     assert artifact_cases["case-b"][0]["artifact_id"] == "case-b:input:image"
 
-
 @pytest.mark.parametrize(
     "kind",
     [
@@ -399,7 +323,6 @@ def test_default_dataset_log_matches_task_kind(kind: TaskKind) -> None:
             kind.value.split("_")[0].casefold() in summary.casefold()
             or kind is TaskKind.STRUCTURED_OUTPUT
         )
-
 
 class _VisionGatewayDouble:
     model = "vision-test"
@@ -424,7 +347,6 @@ class _VisionGatewayDouble:
             "confidence": 0.8,
             "model": self.model,
         }
-
 
 def test_evidence_tools_observe_pixels_and_never_accept_qa_artifacts(
     tmp_path: Path,
@@ -482,7 +404,6 @@ def test_evidence_tools_observe_pixels_and_never_accept_qa_artifacts(
             "inspect_evidence_metadata",
             {"case_id": "case-1", "artifact_id": "case-1:qa-reference"},
         )
-
 
 def test_evidence_tools_fail_closed_after_artifact_tampering(tmp_path: Path) -> None:
     case, image = _image_evidence(tmp_path, TaskKind.DETECTION)

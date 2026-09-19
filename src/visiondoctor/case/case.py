@@ -74,7 +74,7 @@ class Case:
         return binding
 
     def extend_for_guided_motion(self) -> tuple[Segment, ...]:
-        """Vision output is consumed by an actuator, so three more segments exist."""
+        """Enable the additional diagnostic domains used when vision drives motion."""
 
         self.guided_motion = True
         return GUIDED_SEGMENTS

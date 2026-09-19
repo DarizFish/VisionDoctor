@@ -1,17 +1,12 @@
-"""VisionDoctor environment-decoupled core."""
+"""VisionDoctor evidence-driven grasp-diagnosis core."""
 
-from visiondoctor.schemas import (
-    EvidenceBundle,
-    ExecutionResult,
-    Incident,
-    ReferenceSignal,
-    ValidationReport,
-)
+from visiondoctor.case import Case, CaseService, Hypothesis, Segment, SegmentFinding, SegmentStatus
 
 __all__ = [
-    "EvidenceBundle",
-    "ExecutionResult",
-    "Incident",
-    "ReferenceSignal",
-    "ValidationReport",
+    "Case",
+    "CaseService",
+    "Hypothesis",
+    "Segment",
+    "SegmentFinding",
+    "SegmentStatus",
 ]

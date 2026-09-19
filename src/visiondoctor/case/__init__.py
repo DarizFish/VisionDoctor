@@ -1,4 +1,4 @@
-"""Case, diagnostic chain, and the gates a conclusion has to pass."""
+"""Case state, diagnostic domain groups, system-graph findings, and hard gates."""
 
 from .case import LAYER_ORDER, Case, Evidence
 from .chain import (

@@ -6,9 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
-from visiondoctor.api.app import ApiSettings, create_app
 from visiondoctor.llm import AssistantTurn, ModelProtocolError, ToolCall
 from visiondoctor.llm.tools import ProjectGraphInspector
 from visiondoctor.projects.catalog import ProjectCatalog
@@ -23,8 +21,6 @@ from visiondoctor.projects.models import (
 )
 from visiondoctor.projects.resolver import ProjectSemanticResolver
 from visiondoctor.sessions import DiagnosisSessionService
-from visiondoctor.storage import SqliteRunRepository
-
 
 def _git(repository: Path, *arguments: str) -> str:
     result = subprocess.run(
@@ -35,7 +31,6 @@ def _git(repository: Path, *arguments: str) -> str:
         check=True,
     )
     return result.stdout.strip()
-
 
 def _repository(root: Path, files: dict[str, str | bytes]) -> Path:
     root.mkdir()
@@ -52,7 +47,6 @@ def _repository(root: Path, files: dict[str, str | bytes]) -> Path:
     _git(root, "add", ".")
     _git(root, "commit", "-q", "-m", "project snapshot")
     return root
-
 
 def test_ros2_project_becomes_component_and_data_flow_graph(tmp_path: Path) -> None:
     repository = _repository(
@@ -103,7 +97,6 @@ def test_ros2_project_becomes_component_and_data_flow_graph(tmp_path: Path) -> N
     assert any(item.signal == "object_pose_base" for item in project.relations)
     assert project.source.repository_path == str(repository.resolve())
 
-
 def test_plain_python_service_maps_models_configs_and_calibration_without_ros(
     tmp_path: Path,
 ) -> None:
@@ -133,7 +126,6 @@ def test_plain_python_service_maps_models_configs_and_calibration_without_ros(
     assert any(item.kind is AssetKind.MODEL for item in project.assets)
     assert any(item.kind is AssetKind.CALIBRATION for item in project.assets)
     assert any(item.kind.value == "uses" for item in project.relations)
-
 
 def test_critical_ambiguities_require_confirmation_and_update_project_knowledge(
     tmp_path: Path,
@@ -168,7 +160,6 @@ def test_critical_ambiguities_require_confirmation_and_update_project_knowledge(
     assert resolved.status is AmbiguityStatus.CONFIRMED
     assert updated.knowledge.confirmed_facts["production_calibration"] == selected
     assert catalog.get(project.project_id).revision == updated.revision
-
 
 class _ProjectGateway:
     model = "project-understanding-test"
@@ -240,7 +231,6 @@ class _ProjectGateway:
             raw_message={"role": "assistant", "tool_calls": []},
         )
 
-
 def test_semantic_resolver_can_only_update_known_components_and_paths(
     tmp_path: Path,
 ) -> None:
@@ -273,7 +263,6 @@ def test_semantic_resolver_can_only_update_known_components_and_paths(
     assert understood.understanding_status is UnderstandingStatus.UNDERSTOOD
     assert resolver.gateway.calls == 3
 
-
 def test_project_summary_rejects_internal_development_vocabulary(
     tmp_path: Path,
 ) -> None:
@@ -305,7 +294,6 @@ def test_project_summary_rejects_internal_development_vocabulary(
             },
             additional_allowed_paths={"vision.py"},
         )
-
 
 class _RepairingProjectGateway:
     model = "repairing-project-understanding-test"
@@ -406,7 +394,6 @@ class _RepairingProjectGateway:
             raw_message={"role": "assistant", "tool_calls": []},
         )
 
-
 def test_semantic_resolver_accepts_inspected_pinned_paths_and_repairs_in_place(
     tmp_path: Path,
 ) -> None:
@@ -435,7 +422,6 @@ def test_semantic_resolver_accepts_inspected_pinned_paths_and_repairs_in_place(
     assert interpreted.inferred_by == "model"
     assert "engineering-notes.txt" in interpreted.evidence
     assert gateway.calls == 4
-
 
 class _SummaryOnlyProjectGateway:
     model = "summary-only-project-understanding-test"
@@ -494,7 +480,6 @@ class _SummaryOnlyProjectGateway:
             raw_message={"role": "assistant", "tool_calls": []},
         )
 
-
 def test_repeated_project_understanding_replaces_model_overlay(tmp_path: Path) -> None:
     repository = _repository(
         tmp_path / "repeat-understanding-project",
@@ -522,7 +507,6 @@ def test_repeated_project_understanding_replaces_model_overlay(tmp_path: Path) -
     assert not any(item.inferred_by == "model" for item in second.components)
     assert second.knowledge.summary.startswith("该项目")
     assert len(second.relations) == len(discovered.relations)
-
 
 def test_semantic_base_retains_only_valid_confirmed_model_ambiguities(
     tmp_path: Path,
@@ -575,7 +559,6 @@ def test_semantic_base_retains_only_valid_confirmed_model_ambiguities(
     assert any(item.ambiguity_id == confirmed.ambiguity_id for item in base.ambiguities)
     assert base.knowledge.confirmed_facts[confirmed.key] == option_values[0][0]
 
-
 class _PrematureProjectGateway:
     model = "premature-project-understanding-test"
 
@@ -600,7 +583,6 @@ class _PrematureProjectGateway:
             finish_reason="tool_calls",
             raw_message={"role": "assistant", "tool_calls": []},
         )
-
 
 class _BudgetAwareProjectGateway:
     model = "budget-aware-project-understanding-test"
@@ -677,7 +659,6 @@ class _BudgetAwareProjectGateway:
             raw_message={"role": "assistant", "tool_calls": []},
         )
 
-
 class _ParallelRequiredProjectGateway:
     model = "parallel-required-project-understanding-test"
 
@@ -730,7 +711,6 @@ class _ParallelRequiredProjectGateway:
             raw_message={"role": "assistant", "tool_calls": []},
         )
 
-
 class _MalformedOnceProjectGateway(_BudgetAwareProjectGateway):
     def __init__(self, component_id: str, source_path: str) -> None:
         super().__init__(component_id, source_path)
@@ -752,7 +732,6 @@ class _MalformedOnceProjectGateway(_BudgetAwareProjectGateway):
             raise ModelProtocolError("provider returned malformed tool arguments")
         return super().complete(messages, tools)
 
-
 def test_semantic_resolver_rejects_model_that_does_not_inspect_real_source(
     tmp_path: Path,
 ) -> None:
@@ -769,7 +748,6 @@ def test_semantic_resolver_rejects_model_that_does_not_inspect_real_source(
 
     with pytest.raises(ModelProtocolError, match="did not produce a valid"):
         resolver.understand(project)
-
 
 def test_semantic_resolver_enforces_hard_exploration_budget(
     tmp_path: Path,
@@ -796,7 +774,6 @@ def test_semantic_resolver_enforces_hard_exploration_budget(
     assert gateway.budget_notice_seen is True
     assert gateway.plain_text_returned is True
 
-
 def test_required_evidence_stage_counts_only_first_parallel_call(
     tmp_path: Path,
 ) -> None:
@@ -821,7 +798,6 @@ def test_required_evidence_stage_counts_only_first_parallel_call(
     assert understood.knowledge.model == gateway.model
     assert gateway.calls == 3
 
-
 def test_semantic_resolver_retries_one_malformed_provider_tool_response(
     tmp_path: Path,
 ) -> None:
@@ -844,7 +820,6 @@ def test_semantic_resolver_retries_one_malformed_provider_tool_response(
 
     assert gateway.protocol_error_returned is True
     assert understood.knowledge.model == gateway.model
-
 
 def test_project_graph_inspector_traces_impact_without_filesystem_access(
     tmp_path: Path,
@@ -871,7 +846,6 @@ def test_project_graph_inspector_traces_impact_without_filesystem_access(
     assert result["data"]["start_component_id"] == sensor.component_id
     assert "repository_path" not in str(result)
 
-
 def test_multiple_sessions_reuse_one_long_lived_project(tmp_path: Path) -> None:
     repository = _repository(
         tmp_path / "shared-project",
@@ -894,7 +868,6 @@ def test_multiple_sessions_reuse_one_long_lived_project(tmp_path: Path) -> None:
     stored = service.projects.get(first["project"]["project_id"])
     assert stored.incident_ids == ("INC-PROJECT-001",)
 
-
 def test_parallel_ingestion_reuses_one_atomic_project_record(tmp_path: Path) -> None:
     repository = _repository(
         tmp_path / "parallel-project",
@@ -912,7 +885,6 @@ def test_parallel_ingestion_reuses_one_atomic_project_record(tmp_path: Path) -> 
     assert len({item.project_id for item in values}) == 1
     assert len({item.revision for item in values}) == 1
     assert len(catalog.list()) == 1
-
 
 def test_assisted_manifest_maps_arbitrary_layout_and_confirms_runtime(
     tmp_path: Path,
@@ -1005,7 +977,6 @@ confirmations:
         "test_runner_script": "checks/test_primary.py",
     }
 
-
 def test_assisted_manifest_rejects_paths_outside_the_pinned_commit(
     tmp_path: Path,
 ) -> None:
@@ -1026,7 +997,6 @@ components:
 
     with pytest.raises(ValueError, match="不存在的组件文件"):
         ProjectIngestionService().discover(repository)
-
 
 def test_assisted_manifest_can_split_one_scanned_ros_package_into_components(
     tmp_path: Path,
@@ -1074,7 +1044,6 @@ relations:
     assert project.inventory["components"] == len(project.components)
     assert project.inventory["relations"] == len(project.relations)
 
-
 def test_catalog_carries_valid_human_confirmation_across_new_commit(
     tmp_path: Path,
 ) -> None:
@@ -1106,9 +1075,6 @@ def test_catalog_carries_valid_human_confirmation_across_new_commit(
     assert updated.created_at == confirmed.created_at
     assert updated.revision == confirmed.revision + 1
 
-
-def test_project_http_api_exposes_catalog_and_user_confirmation(
-    tmp_path: Path,
 ) -> None:
     repository_path = _repository(
         tmp_path / "api-project",

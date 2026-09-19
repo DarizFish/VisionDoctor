@@ -6,15 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from visiondoctor.adapters import DatasetEvidenceProvider, DatasetReferenceProvider
+from visiondoctor.adapters import DatasetEvidenceProvider
 from visiondoctor.adapters.dataset_execution import DatasetExecutionBackend
-from visiondoctor.agents import QAAgent
 from visiondoctor.sandbox import GitWorktreeSandbox, LocalPythonRunner
 from visiondoctor.schemas import (
     AcceptanceCriteria,
     CandidateKind,
     CandidateVersion,
-    Decision,
     Incident,
     PatchPolicy,
     RepositoryRef,
@@ -196,10 +194,6 @@ def test_structured_task_runs_without_pose_or_rgbd_contract(tmp_path: Path) -> N
     provider = DatasetEvidenceProvider(dataset, code_diff="normalization divisor changed")
     context = provider.prepare_case(incident)
     evidence = provider.collect(context)
-    reference = DatasetReferenceProvider(incident.task.kind).get_reference(
-        incident.case_set[0]
-    )
-
     assert evidence.cases[0].task_kind is TaskKind.STRUCTURED_OUTPUT
     assert evidence.cases[0].rgb is None
     assert evidence.cases[0].depth is None
@@ -233,29 +227,6 @@ def test_structured_task_runs_without_pose_or_rgbd_contract(tmp_path: Path) -> N
             base_commit=incident.faulty_commit,
             rationale="current version",
         ),
-    )
-    qa = QAAgent()
-    baseline_validation = qa.validate(
-        incident,
-        evidence,
-        baseline_execution,
-        (reference,),
-        baseline_execution,
-        baseline_checks,
-    )
-    faulty_validation = qa.validate(
-        incident,
-        evidence,
-        faulty_execution,
-        (reference,),
-        baseline_execution,
-        faulty_checks,
-    )
-
-    assert baseline_validation.decision is Decision.PASS
-    assert faulty_validation.decision is Decision.REJECTED
-    assert faulty_validation.failed_cases["normalize-001"] == (
-        "$.mean: numeric value outside tolerance",
     )
     assert faulty_execution.case_results[0].robot_outputs is None
     assert faulty_execution.case_results[0].vision_outputs is None

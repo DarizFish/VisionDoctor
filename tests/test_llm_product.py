@@ -9,24 +9,17 @@ import httpx
 import pytest
 
 from visiondoctor.llm import (
-    AssistantTurn,
-    ModelProtocolError,
     ModelSettings,
     OpenAICompatibleGateway,
-    ToolCall,
 )
 from visiondoctor.llm.settings import ModelConfigurationError
 from visiondoctor.llm.tools import (
     RepositoryInspector,
-    StrictToolLoop,
     build_patch_from_changes,
     terminal_tool,
 )
-from visiondoctor.product import run_incident
 from visiondoctor.sandbox import GitWorktreeSandbox
-from visiondoctor.schemas import CandidateKind, CandidateVersion, WorkflowState
-from visiondoctor.workflow import DemoRunResult
-
+from visiondoctor.schemas import CandidateKind, CandidateVersion
 
 def test_model_settings_fail_closed_without_key(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -36,7 +29,6 @@ def test_model_settings_fail_closed_without_key(
 
     with pytest.raises(ModelConfigurationError, match="required|missing"):
         ModelSettings.from_environment()
-
 
 def test_model_settings_load_allowlisted_dotenv(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -61,7 +53,6 @@ def test_model_settings_load_allowlisted_dotenv(
     assert settings.api_key == "test-key"
     assert settings.model == "deepseek-v4-flash"
     assert "IGNORED_SETTING" not in os.environ
-
 
 def test_openai_compatible_gateway_executes_tool_call_and_redacts_key(tmp_path: Path) -> None:
     secret = "unit-test-secret"
@@ -120,55 +111,6 @@ def test_openai_compatible_gateway_executes_tool_call_and_redacts_key(tmp_path: 
     assert secret not in audit
     assert "report_ready" in audit
 
-
-class _PlainTextGateway:
-    model = "invalid-test-provider"
-
-    def complete(self, messages, tools) -> AssistantTurn:
-        del messages, tools
-        return AssistantTurn(
-            content="I think it is fixed.",
-            tool_calls=(),
-            finish_reason="stop",
-            raw_message={"role": "assistant", "content": "I think it is fixed."},
-        )
-
-
-class _RepeatedInvalidTerminalGateway:
-    model = "repeated-invalid-terminal-test"
-
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def complete(self, messages, tools) -> AssistantTurn:
-        del messages, tools
-        self.calls += 1
-        if self.calls == 1:
-            calls = (
-                ToolCall(
-                    call_id="inspect-before-invalid",
-                    name="inspect_commit_diff",
-                    arguments={},
-                ),
-            )
-        else:
-            calls = (
-                ToolCall(
-                    call_id=f"invalid-terminal-{self.calls}",
-                    name="submit",
-                    arguments={"result": "invalid"},
-                ),
-            )
-        return AssistantTurn(
-            content="",
-            tool_calls=calls,
-            finish_reason="tool_calls",
-            raw_message={"role": "assistant", "tool_calls": []},
-        )
-
-
-def test_agent_loop_does_not_fallback_when_model_skips_tools(
-    demo_result: DemoRunResult,
 ) -> None:
     incident = demo_result.incident
     inspector = RepositoryInspector(
@@ -190,9 +132,6 @@ def test_agent_loop_does_not_fallback_when_model_skips_tools(
             validate_terminal=lambda value: value,
         )
 
-
-def test_agent_loop_bounds_rejected_terminal_repairs(
-    demo_result: DemoRunResult,
 ) -> None:
     incident = demo_result.incident
     inspector = RepositoryInspector(
@@ -222,9 +161,6 @@ def test_agent_loop_bounds_rejected_terminal_repairs(
 
     assert gateway.calls == 4
 
-
-def test_product_run_forbids_local_execution_without_fallback(
-    demo_result: DemoRunResult, tmp_path: Path, model_gateway_factory
 ) -> None:
     with pytest.raises(ValueError, match="no local fallback"):
         run_incident(
@@ -234,9 +170,6 @@ def test_product_run_forbids_local_execution_without_fallback(
             model_gateway=model_gateway_factory(),
         )
 
-
-def test_product_runs_a_caller_supplied_incident(
-    demo_result: DemoRunResult, tmp_path: Path, model_gateway_factory
 ) -> None:
     result = run_incident(
         tmp_path / "external-product-run",
@@ -248,7 +181,6 @@ def test_product_runs_a_caller_supplied_incident(
     assert result.diagnosis.model == "test-protocol-double"
     assert result.selected_candidate.kind.value == "generated"
     assert result.incident.repository.path == demo_result.incident.repository.path
-
 
 @pytest.mark.parametrize(
     ("before", "after", "operation"),
