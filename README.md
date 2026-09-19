@@ -1,14 +1,12 @@
 # VisionDoctor —— 证据驱动的视觉引导抓取诊断
 
-VisionDoctor 面向比赛中的视觉引导抓取工位。当前产品主线以一次 Case 为生命周期根：接入观察证据和项目版本，围绕系统依赖图提出竞争假设，用宿主确定性核算与实际运行记录定位异常；只有软件层已经定位且源码版本与运行版本一致时，才开放源码解释和候选补丁。
+VisionDoctor 面向视觉引导抓取工位。当前产品主线以一次 Case 为生命周期根：接入观察证据和项目版本，围绕系统依赖图提出竞争假设，用宿主确定性核算与实际运行记录定位异常；只有软件层已经定位且源码版本与运行版本一致时，才开放源码解释和候选补丁。
 
-当前实现不再使用早期的通用 `Incident → Orchestrator → QA` 工作流，也不把诊断理解成“沿固定链路逐段排查”。方向与验收范围见 `design/grasp-diagnosis.md`；当前实测状态、自审和已知边界见 `design/PROGRESS.md`。
-
-## 当前比赛范围
+## 当前范围
 
 当前场景固定为视觉引导抓取，覆盖工件/来料、成像、RGB-D 采集与时序、感知与识别定位、几何关系、目标计算、抓取规划、机器人实际到位，以及版本化源码、隔离复跑、候选修复、人工审批和改动后的重新验证。
 
-当前 Demo 的成功判定止于机器人到达声明的抓取位姿。接触、夹持、吸附和抬起保持等物理抓取结果不属于当前已验证产品能力。Gazebo、故障注入和私有评分属于 `harness/`，不属于诊断产品。
+当前 Demo 的成功判定止于机器人到达声明的抓取位姿。接触、夹持、吸附和抬起保持等物理抓取结果不属于当前已验证产品能力。Gazebo、故障注入和判定真值属于 `harness/`，不属于诊断产品。
 
 ## 当前架构
 
@@ -33,7 +31,7 @@ Case
 
 系统图是共享参考模型，不是固定排查顺序。Agent 根据症状、证据覆盖范围和竞争假设选择下一项检查；宿主把结论绑定到图节点或边，并验证证据引用、结构核算和门控条件。
 
-`src/visiondoctor/case/chain.py` 仍保留 `Segment`、`SegmentFinding` 和 `Hypothesis` 等领域分组模型。这里的 `chain` 是历史命名：当前 guided-motion Case 包含工件、成像、采集、算法、任务结果、标定、接口、机器人、规划、抓取共 10 个诊断域，不表示 Agent 必须从第一段顺序走到最后一段。
+`src/visiondoctor/case/chain.py` 定义 `Segment`、`SegmentFinding` 和 `Hypothesis` 等领域分组模型。guided-motion Case 包含工件、成像、采集、算法、任务结果、标定、接口、机器人、规划、抓取共 10 个诊断域，它们是并列的检查范围，不是必须依次走完的顺序。
 
 结构诊断由 `case/templates.py`、`investigation/structure.py` 和 `investigation/residuals.py` 提供。几何类问题由 `structural_diagnose` 负责定位；`check_transform_chain` 等工具只在已经定位之后解释残差机理，不替代定位本身。
 
@@ -91,8 +89,6 @@ visiondoctor-web
 | POST | `/api/v1/cases/{case_id}/applied` | 记录批准方案已应用 |
 | POST | `/api/v1/cases/{case_id}/recheck` | 用应用后的新证据复核 |
 
-早期的 `/api/v1/runs`、`/api/v1/jobs`、`/api/v1/sessions`、`/api/v1/intake`、`/api/v1/simulation` 等通用产品 API 已退出 finals 主线。
-
 ## 一次诊断怎样推进
 
 1. 新建 Case，描述现象和成功标准。
@@ -117,7 +113,7 @@ visiondoctor-web
 
 ## Gazebo 演示环境
 
-比赛 Gazebo 工位位于 `harness/gazebo`，与产品 API 隔离。它负责真实 RGB-D 采集、MoveIt 运动、故障注入、观察包导出和私有评分。
+Gazebo 工位位于 `harness/gazebo`，与产品 API 隔离。它负责真实 RGB-D 采集、MoveIt 运动、故障注入、观察包导出，以及不向产品公开的判定真值。
 
 ```powershell
 py -3 harness/gazebo/build_demo_project.py
@@ -140,19 +136,23 @@ py -3 -m harness.gazebo.cli stop
 
 ```text
 src/visiondoctor/
-  api/case_api.py       当前 HTTP 产品入口
+  api/case_api.py       HTTP 产品入口
   case/                 Case 状态、领域分组、硬门、持久化与服务
   environment/          观察证据包边界
   investigation/        调查、测量、结构诊断、残差与工具
   knowledge/            抓取领域知识
   repair/               项目绑定、隔离复跑、落地与复核
   sandbox/              Git worktree 与执行隔离
+  adapters/             Gazebo 契约与可视化适配
+  geometry/             刚体变换与位姿误差
+  vision/               RGB-D 标记位姿测量
+  llm/ multimodal.py    模型网关、工具协议与图像观察
+  projects/ schemas/    项目与证据的数据模型
   web/                  Streamlit 工作台
+  cli.py                命令行入口
 harness/gazebo/         独立 Gazebo / ROS 2 演示与故障注入
-design/                 当前方案、进展、自审和实验记录
+example/                可还原的故障示例工程（Git bundle）
 ```
-
-finals 主线不再包含早期通用 Orchestrator、`DemoRunResult`、Incident 产品入口以及配套的 `run / demo / reliability` CLI 工作流。
 
 ## 验证
 
@@ -163,4 +163,4 @@ pytest
 ruff check .
 ```
 
-真实模型诊断和真实 Gazebo 抓取必须实际运行后才能计为验证。当前已实现和已实测范围以 `design/PROGRESS.md` 和 `design/results/` 为准。
+真实模型诊断和真实 Gazebo 抓取必须实际运行后才能计为验证；方案设计、逐轮实验记录与演示留痕作为文档单独交付，不在本仓库分发。
