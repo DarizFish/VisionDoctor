@@ -1,4 +1,13 @@
-# 示例工程：Robot Cell Vision
+# 示例
+
+| 内容 | 用途 |
+|---|---|
+| `pick-a17-run/` 与 `pick-a17-project.bundle` | 一次真实运行的观察证据包与它对应的项目版本。没有 Gazebo 环境也能驱动一次完整诊断，说明见 `pick-a17-run/README.md` |
+| `robot_cell_vision.bundle` | 含一处真实软件回归的示例工程，说明见下文 |
+
+---
+
+## 示例工程：Robot Cell Vision
 
 `robot_cell_vision` 是一个可运行的 RGB-D 机器人视觉定位工程，用作 VisionDoctor 的**故障演示样本**。
 它以 `robot_cell_vision.bundle`（Git bundle，约 10 KB）的形式随仓库分发。

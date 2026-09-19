@@ -71,6 +71,18 @@ visiondoctor-web
 
 默认工作台访问 `http://127.0.0.1:8000` 的 Case API，并在 `http://127.0.0.1:8501` 提供 Streamlit 界面。
 
+## 不依赖仿真环境的示例
+
+`example/pick-a17-run/` 是一次真实运行的观察证据包，`example/pick-a17-project.bundle` 是它对应的
+项目版本。二者合起来可以在没有 Gazebo 的环境下驱动一次完整诊断：接入证据、绑定项目版本、
+结构核算、隔离复跑、候选补丁与人工审批。
+
+```powershell
+git clone example/pick-a17-project.bundle pick-a17-project
+```
+
+清单、内容与这次运行的核算结果见 `example/pick-a17-run/README.md`。
+
 ## Case API
 
 当前服务只暴露 Case 主线：

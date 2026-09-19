@@ -1,0 +1,255 @@
+{
+  "artifacts": [
+    {
+      "captured_at": "2026-09-12T08:29:29.641957+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "software",
+      "media_type": "application/x-ndjson",
+      "path": "parts/A/algorithm/application.jsonl",
+      "sha256": "4ef82a553f15a691b543adb427d8ca32553277b948e3b48c5815695a10c82324"
+    },
+    {
+      "captured_at": "2026-09-12T08:29:29.096750+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "software",
+      "media_type": "application/json",
+      "path": "parts/A/algorithm/input.json",
+      "sha256": "a9d695c9e76b3f563859589cdb0a9188c5dac63e994850cc8dc28c9ed5633056"
+    },
+    {
+      "captured_at": "2026-09-12T08:29:29.639947+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "software",
+      "media_type": "application/json",
+      "path": "parts/A/algorithm/output.json",
+      "sha256": "5916f9efccaf4b3f16b12c580e34f2ea594e261696e72631947cac9839a9f5ec"
+    },
+    {
+      "captured_at": "624.493000",
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "parts/A/capture/camera-info.json",
+      "sha256": "92b7702269c37d2cf35e86ab7e03369b4dfbc0d94dd19db0a90de09af211a94d"
+    },
+    {
+      "captured_at": "624.493000",
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "parts/A/capture/capture.json",
+      "sha256": "e43a08180efd9d6ae4ed8e8552262f550a2ebb74d5eca86179be74d2f124ba1c"
+    },
+    {
+      "captured_at": "624.493000",
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation",
+      "media_type": "image/png",
+      "path": "parts/A/capture/rgb.png",
+      "sha256": "93523f738b80d613392e622a2db8ed16b06c4c053781dde98720de5de2e63fa2"
+    },
+    {
+      "captured_at": "627.321000",
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "parts/A/motion.json",
+      "sha256": "92814f5aea4778c62571946fcf95b37ba6da2d86bafe678747dd3923e41460fd"
+    },
+    {
+      "captured_at": "2026-09-12T08:29:51.882193+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "parts/A/result.json",
+      "sha256": "c5858f4de95f92e286b342460799febeb13a8109f2fe7d798ce0885c75b01edd"
+    },
+    {
+      "captured_at": "627.321000",
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "parts/A/trajectory.json",
+      "sha256": "e6d5846dc103e8ccf73748658a947c17325a29e268ce58681c68a62a35bd69bb"
+    },
+    {
+      "captured_at": "2026-09-12T08:30:00.778530+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "software",
+      "media_type": "application/x-ndjson",
+      "path": "parts/B/algorithm/application.jsonl",
+      "sha256": "073463cd32b2db0fd3415ebcc097ed4d0df965a9c3bbf4f1d11e3a51fddf4630"
+    },
+    {
+      "captured_at": "2026-09-12T08:30:00.535928+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "software",
+      "media_type": "application/json",
+      "path": "parts/B/algorithm/input.json",
+      "sha256": "befd31284312d07d7a916e933cbf64ae9c054c5e915d755a9d972807ffbf3e84"
+    },
+    {
+      "captured_at": "2026-09-12T08:30:00.776216+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "software",
+      "media_type": "application/json",
+      "path": "parts/B/algorithm/output.json",
+      "sha256": "c25108d10579c8ef46e2d2c133c7a2e9d2d511be608e5aa0565f6ef29517f10c"
+    },
+    {
+      "captured_at": "642.918000",
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "parts/B/capture/camera-info.json",
+      "sha256": "300881c8eb47ca192cb35054b4a442896901740c8dac43eefbcc5713a88eb3f2"
+    },
+    {
+      "captured_at": "642.918000",
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "parts/B/capture/capture.json",
+      "sha256": "861f3f1a3279b0fc16d7e788b415ba9747d92a60e3388266e5d376f06d83d85b"
+    },
+    {
+      "captured_at": "642.918000",
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation",
+      "media_type": "image/png",
+      "path": "parts/B/capture/rgb.png",
+      "sha256": "6cff61f97b3dc4da5d0ee43625858e90237260aa9d89502365b0c3d8363cf41f"
+    },
+    {
+      "captured_at": "646.781000",
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "parts/B/motion.json",
+      "sha256": "697511a3c8a50a31074fb5e8104fc06c6accc9c1552f37dcdcadfd519e25f5ff"
+    },
+    {
+      "captured_at": "2026-09-12T08:30:23.101009+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "parts/B/result.json",
+      "sha256": "4dd7a27361cee16842b4ba6de742ec3ffb49fcbe56088c17d6a0a8962dbfc289"
+    },
+    {
+      "captured_at": "646.781000",
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "parts/B/trajectory.json",
+      "sha256": "c1d50f43fa384a4b8a8d6fa2bbf522a45fe6f7724e1e2794e4dedb2cd28bd387"
+    },
+    {
+      "captured_at": "2026-09-12T08:19:22.274861+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "software",
+      "media_type": "application/yaml",
+      "path": "project/cell_calibration.yaml",
+      "sha256": "c8abc541ea8e1368357549c376c8cc470358bc9bd3f34647a15a54a4b9a9336c"
+    },
+    {
+      "captured_at": "2026-09-12T08:19:22.273257+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "software",
+      "media_type": "application/yaml",
+      "path": "project/perception.yaml",
+      "sha256": "25c6dc522d0e8c6a3c81da74bfaec10cf6f7795ee96cad0c59d22b5e7ec7ce13"
+    },
+    {
+      "captured_at": "2026-09-12T08:29:22.528899+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "software",
+      "media_type": "application/json",
+      "path": "project/revision.json",
+      "sha256": "2ecd2fa7a012692991643f67d536cc48256afd0d16099efb672314efa85575d0"
+    },
+    {
+      "captured_at": "2026-09-02T10:35:39.558195+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "software",
+      "media_type": "application/yaml",
+      "path": "project/tool_profile.yaml",
+      "sha256": "343449a59688bfdf9ac6a6aedc6f090f728b13c889363bb14cc957a29270ae1f"
+    },
+    {
+      "captured_at": "2026-09-12T08:30:23.101675+00:00",
+      "clock_domain": "utc_file_mtime",
+      "layer": "observation",
+      "media_type": "application/json",
+      "path": "run-summary.json",
+      "sha256": "c64dc6c9df7cfbc8094203e358bffdb0f265f4352670df28631f347b510b0fa0"
+    }
+  ],
+  "clock": {
+    "quality": "single_container",
+    "source": "ros_sim_time_and_utc"
+  },
+  "created_at": "2026-09-12T08:30:23.318020+00:00",
+  "project_revision": {
+    "commit": "c13954fc031e16f23d2a21de0b7856f169c80109"
+  },
+  "results": [
+    {
+      "capture": {
+        "depth_valid_ratio": 0.68818359375,
+        "frame_id": "rgbd_camera/camera_link/rgbd"
+      },
+      "classification": "missed_pick_pose",
+      "part_id": "A",
+      "position_error_m": 0.071601,
+      "rotation_error_rad": 0.041245,
+      "success": false
+    },
+    {
+      "capture": {
+        "depth_valid_ratio": 0.6882096354166667,
+        "frame_id": "rgbd_camera/camera_link/rgbd"
+      },
+      "classification": "missed_pick_pose",
+      "part_id": "B",
+      "position_error_m": 0.069053,
+      "rotation_error_rad": 0.043492,
+      "success": false
+    }
+  ],
+  "run_id": "run-20260912T082922Z-f603527a",
+  "schema_version": "observation-bundle/v1",
+  "source": "gazebo_read_only_environment",
+  "timeline": [
+    {
+      "at": "2026-09-12T08:29:28.510039+00:00",
+      "event": "camera_capture",
+      "part_id": "A"
+    },
+    {
+      "at": "2026-09-12T08:29:29.669283+00:00",
+      "event": "vision_and_command",
+      "part_id": "A"
+    },
+    {
+      "at": "2026-09-12T08:29:51.882193+00:00",
+      "event": "robot_arrival_and_assessment",
+      "part_id": "A"
+    },
+    {
+      "at": "2026-09-12T08:29:59.518330+00:00",
+      "event": "camera_capture",
+      "part_id": "B"
+    },
+    {
+      "at": "2026-09-12T08:30:00.800058+00:00",
+      "event": "vision_and_command",
+      "part_id": "B"
+    },
+    {
+      "at": "2026-09-12T08:30:23.101008+00:00",
+      "event": "robot_arrival_and_assessment",
+      "part_id": "B"
+    }
+  ]
+}

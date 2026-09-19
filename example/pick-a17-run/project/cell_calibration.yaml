@@ -1,0 +1,10 @@
+calibration_id: pick-a17-rgbd-upright-parts-v8
+camera_to_base:
+  position: [1.150, -1.100, 1.450]
+  quaternion_xyzw: [-0.334701067, 0.170352168, 0.825969584, 0.420392174]
+# Part frame follows the upright fixture/base axes. Desired TCP is 0.048 m
+# above the measured object center; tool z points down toward the part.
+pick_offset_from_part:
+  position: [0.0, 0.0, 0.048]
+  quaternion_xyzw: [0.0, 1.0, 0.0, 0.0]
+units: {length: m, angle: rad, quaternion: xyzw}

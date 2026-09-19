@@ -1,0 +1,24 @@
+{
+  "schema_version": "pick-a17-command/v1",
+  "run_id": "run-20260912T082922Z-f603527a",
+  "part_id": "B",
+  "detection_id": "capture-a31eb8f195e2-B",
+  "capture_id": "capture-a31eb8f195e2",
+  "commanded_flange_base": {
+    "position": [
+      0.4981861266255634,
+      -0.30005647290898296,
+      0.2526257516193473
+    ],
+    "quaternion_xyzw": [
+      -0.029995400262485157,
+      0.9995500367480827,
+      0.0,
+      0.0
+    ]
+  },
+  "config_hashes": {
+    "cell_calibration.yaml": "c8abc541ea8e1368357549c376c8cc470358bc9bd3f34647a15a54a4b9a9336c",
+    "tool_profile.yaml": "343449a59688bfdf9ac6a6aedc6f090f728b13c889363bb14cc957a29270ae1f"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "run_id": "run-20260912T082922Z-f603527a",
+  "project_workspace": "C:\\Users\\zd\\Desktop\\goai-6e5785e-worktree\\.runtime\\gazebo-pick-cell\\projects\\rgbd-grasp-faulty",
+  "project_commit": {
+    "commit": "c13954fc031e16f23d2a21de0b7856f169c80109"
+  },
+  "results": [
+    {
+      "part_id": "A",
+      "classification": "missed_pick_pose",
+      "success": false,
+      "position_error_m": 0.071601,
+      "rotation_error_rad": 0.041245,
+      "capture": {
+        "depth_valid_ratio": 0.68818359375,
+        "frame_id": "rgbd_camera/camera_link/rgbd"
+      }
+    },
+    {
+      "part_id": "B",
+      "classification": "missed_pick_pose",
+      "success": false,
+      "position_error_m": 0.069053,
+      "rotation_error_rad": 0.043492,
+      "capture": {
+        "depth_valid_ratio": 0.6882096354166667,
+        "frame_id": "rgbd_camera/camera_link/rgbd"
+      }
+    }
+  ],
+  "overall_success": false
+}
