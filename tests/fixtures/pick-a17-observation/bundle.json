@@ -72,126 +72,144 @@
       "sha256": "c5c2dc7b3f2a731b9243dd16ef04882bffa100f74dfb0bf0ddf8953e51b36736",
       "media_type": "application/x-ndjson",
       "captured_at": "2026-09-02T08:04:24.376398+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "software"
     },
     {
       "path": "parts/A/algorithm/input.json",
       "sha256": "e5a9898f552b64b00044236e2903f77ba97d0ad24f937e429f967fb195f0122f",
       "media_type": "application/json",
       "captured_at": "2026-09-02T08:04:24.116653+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "software"
     },
     {
       "path": "parts/A/algorithm/output.json",
       "sha256": "d8e99cfc47aba3df4835988fb106f042314c91d2de01f0b2e17a2b431d5d9d52",
       "media_type": "application/json",
       "captured_at": "2026-09-02T08:04:24.374355+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "software"
     },
     {
       "path": "parts/A/capture/camera-info.json",
       "sha256": "eb24f63ee8cdfa08fee294c7b84caa40125dc79f5d957aa7e875ca6bba0b6977",
       "media_type": "application/json",
       "captured_at": "34.694000",
-      "clock_domain": "ros_sim_time_s"
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation"
     },
     {
       "path": "parts/A/motion.json",
       "sha256": "7a87e10281b639b479fdc65b8358b3328df5148129f60679e5e2dacc02e3b7f6",
       "media_type": "application/json",
       "captured_at": "37.482000",
-      "clock_domain": "ros_sim_time_s"
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation"
     },
     {
       "path": "parts/A/result.json",
       "sha256": "f204313d59b7c6ebc94351a53cfad775e7c8d9141dfb78ab50a47bdde3241144",
       "media_type": "application/json",
       "captured_at": "2026-09-02T08:04:52.201201+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "observation"
     },
     {
       "path": "parts/A/trajectory.json",
       "sha256": "f23bc6ce7f5258a9007afbc4bba7aa1447b137b3aa3b9d6635465a3621855dc3",
       "media_type": "application/json",
       "captured_at": "37.482000",
-      "clock_domain": "ros_sim_time_s"
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation"
     },
     {
       "path": "parts/B/algorithm/application.jsonl",
       "sha256": "bc9d64383508b0b78a066b3641ecc2f6cdeccc0e3d7d3453b52a308153cbf225",
       "media_type": "application/x-ndjson",
       "captured_at": "2026-09-02T08:05:00.279389+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "software"
     },
     {
       "path": "parts/B/algorithm/input.json",
       "sha256": "3bdc78277f618e4cd0702009e2d1321caa57f602bcd6ba5e680425ba2c1a5366",
       "media_type": "application/json",
       "captured_at": "2026-09-02T08:05:00.014600+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "software"
     },
     {
       "path": "parts/B/algorithm/output.json",
       "sha256": "399e71aa2fe196a1cef74237efea593ce8119096302c64a9029c6ae1593eddd5",
       "media_type": "application/json",
       "captured_at": "2026-09-02T08:05:00.277884+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "software"
     },
     {
       "path": "parts/B/capture/camera-info.json",
       "sha256": "d772f52d60c39f49264680ac20428b52177a36098eb2371d43863caffd22df11",
       "media_type": "application/json",
       "captured_at": "53.121000",
-      "clock_domain": "ros_sim_time_s"
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation"
     },
     {
       "path": "parts/B/motion.json",
       "sha256": "d99ff536c0e5c1aaa2d000e4db9a743c7a877d3ca24a722affae6739da4cf133",
       "media_type": "application/json",
       "captured_at": "55.888000",
-      "clock_domain": "ros_sim_time_s"
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation"
     },
     {
       "path": "parts/B/result.json",
       "sha256": "7e45148ff819851d3cc7458b864c46b8876fffaf38fb93cabd5e6583537f28bb",
       "media_type": "application/json",
       "captured_at": "2026-09-02T08:05:27.364120+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "observation"
     },
     {
       "path": "parts/B/trajectory.json",
       "sha256": "68b814fd48fb520745edfd5a1afc2a087e289c548f93cfe106fcc04f7f4a7b18",
       "media_type": "application/json",
       "captured_at": "55.888000",
-      "clock_domain": "ros_sim_time_s"
+      "clock_domain": "ros_sim_time_s",
+      "layer": "observation"
     },
     {
       "path": "project/cell_calibration.yaml",
       "sha256": "bcc1ee6b5c16338e6940b787dc3b29960171d246cb224c536d1c621c36fad72c",
       "media_type": "application/yaml",
       "captured_at": "2026-09-02T08:01:39.759515+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "software"
     },
     {
       "path": "project/revision.json",
       "sha256": "6514c08203123940c4f527f621d42bd6a7cdc4241fd60320c0250d7c33cf1e87",
       "media_type": "application/json",
       "captured_at": "2026-09-02T08:04:17.221702+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "software"
     },
     {
       "path": "project/tool_profile.yaml",
       "sha256": "4dd7ba45a24481f3903984a693ae38ea08bea4677f1c378c3c0cea39967eb63c",
       "media_type": "application/yaml",
       "captured_at": "2026-09-02T08:01:39.757179+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "software"
     },
     {
       "path": "run-summary.json",
       "sha256": "9abdd59eec4cd8b15d4a1e95732f6cce1d54ea0242f8d24f773b75f8d1b8ba58",
       "media_type": "application/json",
       "captured_at": "2026-09-02T08:05:27.365122+00:00",
-      "clock_domain": "utc_file_mtime"
+      "clock_domain": "utc_file_mtime",
+      "layer": "observation"
     }
   ]
 }

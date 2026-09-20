@@ -1,6 +1,10 @@
 # Text files are normalised to LF in the repository.
 * text=auto eol=lf
 
+# The observation bundle is evidence: every byte is covered by a sha256 in its
+# manifest, so it must round-trip through checkout unchanged.
+example/pick-a17-run/** -text
+
 # Binary assets must never go through line-ending conversion.
 *.pdf     binary
 *.png     binary
@@ -15,6 +19,7 @@
 *.docx    binary
 *.xlsx    binary
 *.npy     binary
+*.npz     binary
 *.bundle  binary
 *.ico     binary
 *.woff    binary

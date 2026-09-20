@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "capture_id": "capture-c1bf8bb8e9f7",
+  "captured_at": "2026-09-12T08:14:15.999420+00:00",
+  "clock_domain": "ros_sim_time_s",
+  "sensor_stamps_s": {
+    "rgb": 39.01,
+    "depth": 39.01,
+    "camera_info": 39.01
+  },
+  "rgb_path": "rgb.png",
+  "depth_path": "depth.npy",
+  "observer_clip_path": "observer.gif",
+  "observer_keyframes": [
+    "observer-key-000.png",
+    "observer-key-005.png",
+    "observer-key-009.png"
+  ],
+  "camera_info_path": "camera-info.json",
+  "frame_id": "rgbd_camera/camera_link/rgbd",
+  "depth_valid_ratio": 0.6881770833333334,
+  "message_stamp_spread_s": 0.0
+}

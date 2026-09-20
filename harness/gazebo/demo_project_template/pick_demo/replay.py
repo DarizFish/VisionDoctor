@@ -60,6 +60,7 @@ def replay(input_path: Path, output_path: Path, log_path: Path) -> dict[str, Any
         "run_id": str(source.get("run_id", "unknown")),
         "part_id": str(source.get("part_id", "unknown")),
         "detection_id": str(source.get("detection_id", "unknown")),
+        "capture_id": source.get("capture_id"),
         "commanded_flange_base": command,
         "config_hashes": {
             "cell_calibration.yaml": _sha256(calibration_path),

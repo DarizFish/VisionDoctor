@@ -1,64 +1,72 @@
+"""The RGB-D marker pose is measured from pixels and depth, never declared."""
+
 from __future__ import annotations
 
-import json
-import shutil
 from pathlib import Path
 
 import numpy as np
 import pytest
 from PIL import Image
 
-from visiondoctor.geometry import rotation_error_rad, translation_error_m
+from visiondoctor.geometry import make_transform, rotation_error_rad, translation_error_m
 from visiondoctor.vision import DeterministicRgbdPoseEstimator
-from visiondoctor.workflow import DemoRunResult
+
+CAMERA_MATRIX = np.array(
+    [[600.0, 0.0, 320.0], [0.0, 600.0, 240.0], [0.0, 0.0, 1.0]], dtype=float
+)
+BACKGROUND = (25, 31, 42)
+ORIGIN_RGB = (0, 255, 0)
+X_AXIS_RGB = (255, 0, 0)
+Y_AXIS_RGB = (0, 0, 255)
 
 
-def test_rgbd_marker_pose_is_measured_not_copied_from_label(
-    demo_result: DemoRunResult,
+def _marker_frame(angle_rad: float) -> np.ndarray:
+    """An orthonormal marker frame rotated about the camera z axis."""
+
+    cos, sin = float(np.cos(angle_rad)), float(np.sin(angle_rad))
+    rotation = np.array([[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]], dtype=float)
+    return make_transform(rotation, np.array([0.02, -0.03, 0.60], dtype=float))
+
+
+def _paint(
+    rgb: np.ndarray, depth: np.ndarray, point: np.ndarray, color: tuple[int, int, int]
 ) -> None:
-    estimator = DeterministicRgbdPoseEstimator()
-    translation_errors: list[float] = []
-    rotation_errors: list[float] = []
-    for case in demo_result.incident.case_set:
-        manifest_path = Path(case.manifest_path)
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        estimated = estimator.estimate(
-            manifest_path.parent / manifest["rgb_path"],
-            manifest_path.parent / manifest["depth_path"],
-            np.asarray(manifest["camera_matrix"], dtype=float),
-        ).as_array()
-        reference = json.loads(Path(case.reference_path).read_text(encoding="utf-8"))
-        t_base_camera = np.asarray(manifest["t_base_camera"]["matrix"], dtype=float)
-        t_base_object = np.asarray(reference["reference_t_base_object"]["matrix"], dtype=float)
-        label = np.linalg.inv(t_base_camera) @ t_base_object
-        translation_errors.append(translation_error_m(estimated, label))
-        rotation_errors.append(rotation_error_rad(estimated, label))
-
-    assert max(translation_errors) <= 0.005
-    assert max(rotation_errors) <= demo_result.incident.acceptance_criteria.mean_rotation_error_rad
-    assert any(error > 1e-6 for error in translation_errors)
+    pixel = CAMERA_MATRIX @ point
+    u, v = int(round(pixel[0] / pixel[2])), int(round(pixel[1] / pixel[2]))
+    rows, columns = np.ogrid[: rgb.shape[0], : rgb.shape[1]]
+    disk = (columns - u) ** 2 + (rows - v) ** 2 <= 9
+    rgb[disk] = color
+    depth[disk] = point[2]
 
 
-def test_rgbd_estimator_rejects_missing_origin_marker(
-    demo_result: DemoRunResult, tmp_path: Path
-) -> None:
-    case = demo_result.incident.case_set[0]
-    manifest_path = Path(case.manifest_path)
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    source_rgb = manifest_path.parent / manifest["rgb_path"]
-    source_depth = manifest_path.parent / manifest["depth_path"]
-    rgb_path = tmp_path / "rgb.png"
-    depth_path = tmp_path / "depth.npy"
-    shutil.copy2(source_depth, depth_path)
-    with Image.open(source_rgb) as image:
-        rgb = np.asarray(image.convert("RGB")).copy()
-    green = (rgb[..., 1] > 180) & (rgb[..., 0] < 120) & (rgb[..., 2] < 180)
-    rgb[green] = [25, 31, 42]
+def _scene(root: Path, pose: np.ndarray, *, omit_origin: bool = False) -> tuple[Path, Path]:
+    rgb = np.full((480, 640, 3), BACKGROUND, dtype=np.uint8)
+    depth = np.zeros((480, 640), dtype=float)
+    origin = pose[:3, 3]
+    if not omit_origin:
+        _paint(rgb, depth, origin, ORIGIN_RGB)
+    _paint(rgb, depth, origin + pose[:3, 0] * 0.08, X_AXIS_RGB)
+    _paint(rgb, depth, origin + pose[:3, 1] * 0.08, Y_AXIS_RGB)
+    rgb_path, depth_path = root / "rgb.png", root / "depth.npy"
     Image.fromarray(rgb).save(rgb_path)
+    np.save(depth_path, depth)
+    return rgb_path, depth_path
+
+
+def test_marker_pose_is_recovered_from_pixels_and_depth(tmp_path: Path) -> None:
+    expected = _marker_frame(np.deg2rad(30.0))
+    rgb_path, depth_path = _scene(tmp_path, expected)
+
+    measured = DeterministicRgbdPoseEstimator().estimate(
+        rgb_path, depth_path, CAMERA_MATRIX
+    ).as_array()
+
+    assert translation_error_m(measured, expected) <= 0.002
+    assert rotation_error_rad(measured, expected) <= 0.02
+
+
+def test_estimator_fails_closed_when_the_origin_marker_is_absent(tmp_path: Path) -> None:
+    rgb_path, depth_path = _scene(tmp_path, _marker_frame(0.0), omit_origin=True)
 
     with pytest.raises(ValueError, match="origin"):
-        DeterministicRgbdPoseEstimator().estimate(
-            rgb_path,
-            depth_path,
-            np.asarray(manifest["camera_matrix"], dtype=float),
-        )
+        DeterministicRgbdPoseEstimator().estimate(rgb_path, depth_path, CAMERA_MATRIX)

@@ -1,0 +1,18 @@
+# Recipe for colored parts standing upright in this demonstration fixture.
+# Position is measured from RGB-D. No part-center coordinates are supplied.
+minimum_color_pixels: 16
+minimum_target_depth_ratio: 0.6
+minimum_top_surface_points: 6
+top_surface_band_m: 0.003
+fixture_grasp_frame_quaternion_xyzw: [0.0, 0.0, 0.0, 1.0]
+parts:
+  A:
+    shape: box
+    rgb_min: [0, 75, 100]
+    rgb_max: [80, 220, 255]
+    height_m: 0.06
+  B:
+    shape: cylinder
+    rgb_min: [130, 60, 0]
+    rgb_max: [255, 210, 75]
+    height_m: 0.06

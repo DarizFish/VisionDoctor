@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,10 @@ OBSERVER_TOPIC = "/pick_cell/observer"
 
 def _stamp(message: ImageMessage | CameraInfo) -> float:
     return float(message.header.stamp.sec) + float(message.header.stamp.nanosec) * 1e-9
+
+
+def _keyframe_indices(frames: list[Any]) -> list[int]:
+    return sorted({0, len(frames) // 2, len(frames) - 1})
 
 
 class SceneCaptureProbe(Node):
@@ -86,7 +91,30 @@ class SceneCaptureProbe(Node):
             missing.append("observer video frames")
         raise TimeoutError("Gazebo sensor data was not received: " + ", ".join(missing))
 
+    def save_observer_clip(self, output: Path) -> None:
+        """Write the observer frames, keyframes and GIF that capture.json names."""
+
+        frame_dir = output / "observer-frames"
+        frame_dir.mkdir(parents=True, exist_ok=True)
+        for index, frame in enumerate(self.observer_frames):
+            Image.fromarray(frame, mode="RGB").save(frame_dir / f"observer-{index:03d}.png")
+        for index in _keyframe_indices(self.observer_frames):
+            Image.fromarray(self.observer_frames[index], mode="RGB").save(
+                output / f"observer-key-{index:03d}.png"
+            )
+        frames = [Image.fromarray(frame, mode="RGB") for frame in self.observer_frames]
+        frames[0].save(
+            output / "observer.gif", save_all=True, append_images=frames[1:], duration=125, loop=0,
+        )
+
     def save(self, output: Path) -> dict[str, Any]:
+        metadata = self.save_rgbd(output)
+        self.save_observer_clip(output)
+        return metadata
+
+    def save_rgbd(self, output: Path) -> dict[str, Any]:
+        """Write what perception consumes, plus the record naming the clip still to come."""
+
         if self.rgb is None or self.depth is None or self.camera_info is None:
             raise RuntimeError("scene capture is incomplete")
         rgb = np.asarray(
@@ -109,32 +137,27 @@ class SceneCaptureProbe(Node):
             "intrinsics": list(self.camera_info.k),
             "distortion": list(self.camera_info.d),
             "stamp_s": _stamp(self.camera_info),
+            "rgb_depth_registered": True,
+            "depth_unit": "m",
+            "depth_measurement": "optical_z",
+            "pose_axes": "body_x_forward_y_left_z_up",
         }
         (output / "camera-info.json").write_text(
             json.dumps(camera, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
-        frame_dir = output / "observer-frames"
-        frame_dir.mkdir(exist_ok=True)
-        for index, frame in enumerate(self.observer_frames):
-            Image.fromarray(frame, mode="RGB").save(frame_dir / f"observer-{index:03d}.png")
-        keyframes: list[str] = []
-        for index in sorted({0, len(self.observer_frames) // 2, len(self.observer_frames) - 1}):
-            name = f"observer-key-{index:03d}.png"
-            Image.fromarray(self.observer_frames[index], mode="RGB").save(output / name)
-            keyframes.append(name)
-        observer_clip = output / "observer.gif"
-        frames = [Image.fromarray(frame, mode="RGB") for frame in self.observer_frames]
-        frames[0].save(
-            observer_clip,
-            save_all=True,
-            append_images=frames[1:],
-            duration=125,
-            loop=0,
-        )
+        keyframes = [
+            f"observer-key-{index:03d}.png" for index in _keyframe_indices(self.observer_frames)
+        ]
         depth_valid = np.isfinite(depth) & (depth > 0)
-        return {
+        metadata = {
             "success": True,
+            "capture_id": f"capture-{uuid.uuid4().hex[:12]}",
             "captured_at": datetime.now(UTC).isoformat(),
+            "clock_domain": "ros_sim_time_s",
+            "sensor_stamps_s": {
+                "rgb": _stamp(self.rgb), "depth": _stamp(self.depth),
+                "camera_info": _stamp(self.camera_info),
+            },
             "rgb_path": "rgb.png",
             "depth_path": "depth.npy",
             "observer_clip_path": "observer.gif",
@@ -147,6 +170,10 @@ class SceneCaptureProbe(Node):
             )
             - min(_stamp(self.rgb), _stamp(self.depth), _stamp(self.camera_info)),
         }
+        (output / "capture.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        return metadata
 
 
 def main() -> int:

@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
+import weakref
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +24,7 @@ import yaml
 from .build_demo_project import DEFAULT_RUNTIME, DEFAULT_WORKSPACE, build, ensure_private_scoring
 from .geometry import compose, pose, pose_error
 from .models import GraspAssessment, classify_grasp
+from .sensor_faults import apply_sensor_fault
 
 
 class PickCellController:
@@ -33,6 +39,12 @@ class PickCellController:
     WSLG_SOURCE = "/mnt/host/wslg/.X11-unix"
     WSLG_TARGET = "/tmp/.X11-unix"
     BUNDLE_SCHEMA = "observation-bundle/v1"
+    # Gazebo renders every camera and its GUI in software.  At four CPUs the
+    # container was throttled in nearly every scheduling period and simulated
+    # time ran at about half of real time; twelve leave headroom for the host.
+    CPU_LIMIT = "12"
+    AGENT_SCRIPT = "/opt/pick-cell/ros/cell_agent.py"
+    AGENT_CLIENT = "/opt/pick-cell/ros/cell_agent_client.py"
     # The fixture only occupies the low table zone.  Each cycle first reaches
     # this point above a part, then performs the visible downward pick and
     # returns to the same clearance height.
@@ -61,6 +73,11 @@ class PickCellController:
         self.ros_root = self.harness_root / "ros"
         self.private_root = self.harness_root / "private"
         self.state_path = self.runtime_root / "controller-state.json"
+        #: Warm interpreters for project programs, by workspace, restarted when code changes.
+        self._workers: dict[Path, dict[str, Any]] = {}
+        self._workers_lock = threading.Lock()
+        self._deferred_clips = False
+        weakref.finalize(self, _stop_workers, self._workers)
 
     @property
     def default_workspace(self) -> Path:
@@ -125,6 +142,8 @@ class PickCellController:
         """Start the official Gazebo GUI and the UR5e simulation in one container."""
 
         if self._container_running():
+            # Warm what the first pick needs, so the click does not pay for it.
+            self._warm_cell(verify=True)
             return {"started": False, "reason": "already_running", "status": self.status()}
         if not self._image_ready():
             raise RuntimeError(
@@ -147,7 +166,7 @@ class PickCellController:
             "--memory",
             "4g",
             "--cpus",
-            "4",
+            self.CPU_LIMIT,
             "--env",
             f"ROS_DOMAIN_ID={self.DOMAIN_ID}",
             "--env",
@@ -188,7 +207,8 @@ class PickCellController:
             )
         self._wait_for_ros("/scaled_joint_trajectory_controller", timeout_s=95.0)
         self._start_camera_bridge()
-        window = self._wait_for_window(timeout_s=35.0)
+        window = self._wait_for_window(timeout_s=60.0)
+        self._warm_cell(verify=True)
         state = self._read_json(self.state_path) or {}
         state.update(
             {
@@ -212,8 +232,14 @@ class PickCellController:
             raise RuntimeError(result.stderr.strip() or "failed to stop Gazebo container")
         return {"stopped": True}
 
-    def capture(self, destination: Path | None = None) -> dict[str, Any]:
-        """Save an actual RGB-D frame and observer-camera clip from the live cell."""
+    def capture(
+        self, destination: Path | None = None, *, defer_clip: bool = False,
+    ) -> dict[str, Any]:
+        """Save an actual RGB-D frame and observer-camera clip from the live cell.
+
+        ``defer_clip`` returns once the RGB-D set and its record are written; the
+        observer clip is finished in the agent and flushed before a bundle is sealed.
+        """
 
         self._require_running()
         capture_root = destination or self.runtime_root / "captures" / self._new_id("capture")
@@ -226,76 +252,100 @@ class PickCellController:
             ) from exc
         capture_root.mkdir(parents=True, exist_ok=True)
         container_destination = "/opt/pick-cell/runs/" + relative.as_posix()
-        result = self._docker(
-            "exec",
-            "--env",
-            f"PICK_CELL_CAPTURE_DIR={container_destination}",
-            "--env",
-            "PICK_CELL_CAPTURE_TIMEOUT_S=35",
-            self.CONTAINER,
-            "bash",
-            "-lc",
-            (
-                "source /opt/ros/jazzy/setup.bash && exec python3 "
-                "/opt/pick-cell/ros/scene_capture_probe.py"
-            ),
-            timeout_s=55.0,
+        payload = self._agent_call(
+            {"op": "capture", "dir": container_destination, "defer_clip": defer_clip},
+            timeout_s=45.0,
         )
-        payload = self._structured_result(result.stdout, "PICK_CELL_CAPTURE=")
-        if result.returncode != 0 or not payload or not payload.get("success"):
-            detail = payload.get("error") if payload else result.stderr.strip()
-            raise RuntimeError(str(detail or "Gazebo camera capture failed"))
+        self._deferred_clips = self._deferred_clips or defer_clip
+        if not payload.get("success"):
+            raise RuntimeError(str(payload.get("error") or "Gazebo camera capture failed"))
         payload["capture_dir"] = str(capture_root)
         return payload
 
-    def run_cycle(self, workspace: Path | None = None) -> dict[str, Any]:
+    def run_cycle(
+        self, workspace: Path | None = None, *, sensor_fault: str | None = None,
+        progress: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
         """Run the public A/B vision program and create one sanitized observation bundle."""
 
+        if sensor_fault not in {None, "target_depth_dropout", "rgb_underexposure"}:
+            raise ValueError(f"unknown sensor experiment: {sensor_fault}")
         self._require_running()
         project = (workspace or self.default_workspace).resolve()
         if not project.exists():
             self.bootstrap_project()
             project = self.default_workspace
         self._validate_workspace(project)
-        self._start_moveit()
+        self._progress = progress
+        self._emit("prepare")
+        self._deferred_clips = False
+        self._warm_cell()
         run_id = self._new_id("run")
         run_root = self.runtime_root / "runs" / run_id
         run_root.mkdir(parents=True, exist_ok=False)
+        if sensor_fault:
+            # Grounding for the evaluator lives outside the exportable run.
+            scenario_path = self.runtime_root / "scenario-labels" / f"{run_id}.json"
+            scenario_path.parent.mkdir(parents=True, exist_ok=True)
+            self._write_json(scenario_path, {"run_id": run_id, "sensor_fault": sensor_fault,
+                                          "scope": "injected sensor data before perception"})
         project_commit = self._project_commit(project)
         self._copy_project_evidence(project, run_root)
         results: list[dict[str, Any]] = []
         timeline: list[dict[str, str]] = []
+        observation_started_at = self._now()
         for case_id in ("A", "B"):
             case_root = run_root / "parts" / case_id
             capture_root = case_root / "capture"
-            capture = self.capture(capture_root)
+            self._emit("capture", case_id)
+            capture = self.capture(capture_root, defer_clip=True)
+            capture_meta = self._read_json(capture_root / "capture.json")
+            capture_meta["phase"] = "before_command"
+            self._write_json(capture_root / "capture.json", capture_meta)
+            if sensor_fault:
+                apply_sensor_fault(capture_root, sensor_fault)
+                capture.update(self._read_json(capture_root / "capture.json"))
             timeline.append(self._timeline("camera_capture", case_id))
             input_path = case_root / "algorithm" / "input.json"
             output_path = case_root / "algorithm" / "output.json"
             log_path = case_root / "algorithm" / "application.jsonl"
             input_path.parent.mkdir(parents=True, exist_ok=True)
-            input_path.write_text(
-                json.dumps(self._vision_input(run_id, case_id), ensure_ascii=False, indent=2)
-                + "\n",
-                encoding="utf-8",
-            )
-            algorithm = self._run_project(project, input_path, output_path, log_path)
-            timeline.append(self._timeline("vision_and_command", case_id))
-            motion = self._execute_motion(
-                algorithm["commanded_flange_base"],
-                run_root,
-                case_id,
-            )
+            self._emit("perception", case_id)
+            detection = self._vision_input(project, capture_root, input_path, run_id, case_id)
+            if detection.get("status") == "detected":
+                self._emit("command", case_id)
+                algorithm = self._run_project(project, input_path, output_path, log_path)
+                timeline.append(self._timeline("vision_and_command", case_id))
+                motion = self._execute_motion(
+                    algorithm["commanded_flange_base"], run_root, case_id,
+                )
+                assessment = self._assess(project, case_id, algorithm, motion)
+                verdict = {
+                    "classification": assessment.classification.value,
+                    "success": assessment.success,
+                    "position_error_m": assessment.position_error_m,
+                    "rotation_error_rad": assessment.rotation_error_rad,
+                }
+            else:
+                # Missing perception is itself an observable failed cycle. Do
+                # not invent a pose or silently drop the run before exporting.
+                algorithm = {
+                    "run_id": run_id, "part_id": case_id,
+                    "capture_id": detection.get("capture_id"),
+                    "detection_id": detection.get("detection_id"),
+                    "status": "no_command", "reason": detection.get("status"),
+                }
+                self._write_json(output_path, algorithm)
+                timeline.append(self._timeline("vision_and_command", case_id))
+                motion = {"success": False, "steps": [], "skipped_reason": "perception_no_pose"}
+                verdict = {"classification": "perception_unavailable", "success": False}
+                self._emit("no_command", case_id, str(detection.get("status")))
             (case_root / "motion.json").write_text(
                 json.dumps(motion, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
             )
-            assessment = self._assess(project, case_id, algorithm, motion)
             result = {
                 "part_id": case_id,
-                "classification": assessment.classification.value,
-                "success": assessment.success,
-                "position_error_m": assessment.position_error_m,
-                "rotation_error_rad": assessment.rotation_error_rad,
+                **verdict,
                 "capture": {
                     "depth_valid_ratio": capture.get("depth_valid_ratio"),
                     "frame_id": capture.get("frame_id"),
@@ -306,6 +356,7 @@ class PickCellController:
             )
             results.append(result)
             timeline.append(self._timeline("robot_arrival_and_assessment", case_id))
+            self._emit("part_done", case_id, str(verdict["classification"]))
         summary = {
             "run_id": run_id,
             "project_workspace": str(project),
@@ -316,9 +367,16 @@ class PickCellController:
         (run_root / "run-summary.json").write_text(
             json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
-        bundle_path = self._write_bundle(run_root, run_id, project_commit, timeline, results)
+        self._emit("bundle")
+        self._flush_clips()
+        bundle_path = self._write_bundle(
+            run_root, run_id, project_commit, timeline, results,
+            observation_started_at=observation_started_at,
+        )
         summary["bundle_path"] = str(bundle_path)
         self._write_json(self.runtime_root / "latest-run.json", summary)
+        self._emit("done", detail=run_id)
+        self._progress = None
         return summary
 
     def export_bundle(self, run_id: str, destination: Path) -> Path:
@@ -366,19 +424,125 @@ class PickCellController:
             raise RuntimeError(result.stderr.strip() or "could not start camera bridge")
         self._wait_for_ros("/pick_cell/rgbd/image", timeout_s=40.0, topic=True)
 
-    def _start_moveit(self) -> None:
-        if "move_group" not in self._container_processes():
-            launch = " ".join(
-                [
-                    "source /opt/ros/jazzy/setup.bash",
-                    "&& ros2 launch ur_moveit_config ur_moveit.launch.py",
-                    "ur_type:=ur5e launch_rviz:=false use_sim_time:=true",
-                ]
+    def _warm_cell(self, *, verify: bool = False) -> None:
+        """MoveIt and the cell agent running; ``verify`` also waits for the agent to answer."""
+
+        processes = self._container_processes()
+        self._start_moveit(processes)
+        self._ensure_agent(processes, verify=verify)
+
+    def _start_moveit(self, processes: str | None = None) -> None:
+        """Launch move_group once; the agent waits for its action server when it is used."""
+
+        if "move_group" in (processes if processes is not None else self._container_processes()):
+            return
+        launch = " ".join(
+            [
+                "source /opt/ros/jazzy/setup.bash",
+                "&& ros2 launch ur_moveit_config ur_moveit.launch.py",
+                "ur_type:=ur5e launch_rviz:=false use_sim_time:=true",
+            ]
+        )
+        result = self._docker("exec", "--detach", self.CONTAINER, "bash", "-lc", launch)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "could not start MoveIt")
+
+    def _ensure_agent(
+        self, processes: str | None = None, *, verify: bool = True, timeout_s: float = 45.0,
+    ) -> None:
+        """Start the resident cell agent if needed; ``verify`` waits until it answers."""
+
+        running = "cell_agent.py" in (
+            processes if processes is not None else self._container_processes()
+        )
+        if running and not verify:
+            return
+        if not running:
+            launch = (
+                "source /opt/ros/jazzy/setup.bash && exec python3 "
+                f"{self.AGENT_SCRIPT} > /tmp/cell-agent.log 2>&1"
             )
             result = self._docker("exec", "--detach", self.CONTAINER, "bash", "-lc", launch)
             if result.returncode != 0:
-                raise RuntimeError(result.stderr.strip() or "could not start MoveIt")
-        self._wait_for_ros("/move_action", timeout_s=95.0, action=True)
+                raise RuntimeError(result.stderr.strip() or "could not start the cell agent")
+        deadline = time.monotonic() + timeout_s
+        latest = ""
+        while time.monotonic() < deadline:
+            try:
+                if self._agent_call({"op": "ping"}, timeout_s=10.0, retry=False).get("success"):
+                    return
+            except RuntimeError as exc:
+                latest = str(exc)
+            time.sleep(0.5)
+        raise TimeoutError(f"cell agent did not answer: {latest}")
+
+    def _flush_clips(self) -> None:
+        if not self._deferred_clips:
+            return
+        result = self._agent_call({"op": "flush"}, timeout_s=60.0)
+        self._deferred_clips = False
+        if not result.get("success"):
+            raise RuntimeError("observer clips were not written: " + "; ".join(result["errors"]))
+
+    def _agent_call(
+        self, request: dict[str, Any], *, timeout_s: float, retry: bool = True,
+    ) -> dict[str, Any]:
+        """Send one request to the agent, relaying its progress events as they arrive."""
+
+        try:
+            process = subprocess.Popen(
+                ["docker", "exec", "-i", self.CONTAINER, "python3", self.AGENT_CLIENT],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding="utf-8", errors="replace",
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("Docker Desktop CLI is unavailable") from exc
+        watchdog = threading.Timer(timeout_s, process.kill)
+        watchdog.start()
+        result: dict[str, Any] | None = None
+        unavailable: str | None = None
+        try:
+            assert process.stdin is not None and process.stdout is not None
+            process.stdin.write(json.dumps(request))
+            process.stdin.close()
+            for line in process.stdout:
+                try:
+                    message = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if message.get("type") == "event":
+                    step = message.get("step")
+                    self._emit(f"agent_{message.get('event')}", detail=step)
+                elif message.get("type") == "result":
+                    result = message
+                    break
+                elif message.get("type") == "unavailable":
+                    unavailable = str(message.get("error"))
+                    break
+            process.wait(timeout=10.0)
+        finally:
+            watchdog.cancel()
+            if process.poll() is None:
+                process.kill()
+        if unavailable is not None:
+            if not retry:
+                raise RuntimeError(f"cell agent unavailable: {unavailable}")
+            self._ensure_agent(verify=True)
+            return self._agent_call(request, timeout_s=timeout_s, retry=False)
+        if result is None:
+            detail = process.stderr.read().strip() if process.stderr else ""
+            raise RuntimeError(detail or f"cell agent returned no result for {request.get('op')}")
+        result.pop("type", None)
+        return result
+
+    def _emit(self, stage: str, part: str | None = None, detail: str | None = None) -> None:
+        """Tell whoever started the cycle where it is; never lets a viewer break the run."""
+
+        listener = getattr(self, "_progress", None)
+        if listener is None:
+            return
+        with contextlib.suppress(Exception):
+            listener({"stage": stage, "part": part, "detail": detail, "at": time.monotonic()})
 
     def _execute_motion(
         self,
@@ -389,33 +553,20 @@ class PickCellController:
         output = run_root / "parts" / case_id / "trajectory.json"
         relative = output.relative_to(self.runtime_root)
         pregrasp = self._top_down_pregrasp(command)
-        result = self._docker(
-            "exec",
-            "--env",
-            "PICK_CELL_TARGET_FLANGE=" + json.dumps(command, separators=(",", ":")),
-            "--env",
-            "PICK_CELL_IK_SEED=" + json.dumps(self.IK_SEEDS[case_id], separators=(",", ":")),
-            "--env",
-            "PICK_CELL_PREGRASP_FLANGE=" + json.dumps(pregrasp, separators=(",", ":")),
-            "--env",
-            "PICK_CELL_MOTION_OUTPUT=/opt/pick-cell/runs/" + relative.as_posix(),
-            self.CONTAINER,
-            "bash",
-            "-lc",
-            (
-                "source /opt/ros/jazzy/setup.bash && exec python3 "
-                "/opt/pick-cell/ros/grasp_cycle_probe.py"
-            ),
-            timeout_s=480.0,
-        )
-        payload = self._structured_result(result.stdout, "PICK_CELL_MOTION=")
-        if payload is None:
-            return {
-                "success": False,
-                "error": result.stderr.strip() or "motion probe did not return structured data",
-                "steps": [],
-            }
-        return payload
+        self._emit("motion", case_id)
+        try:
+            return self._agent_call(
+                {
+                    "op": "grasp",
+                    "target": command,
+                    "pregrasp": pregrasp,
+                    "seed": list(self.IK_SEEDS[case_id]),
+                    "output": "/opt/pick-cell/runs/" + relative.as_posix(),
+                },
+                timeout_s=480.0,
+            )
+        except RuntimeError as exc:
+            return {"success": False, "error": str(exc), "steps": []}
 
     def _assess(
         self,
@@ -425,8 +576,13 @@ class PickCellController:
         motion: dict[str, Any],
     ) -> GraspAssessment:
         scoring = self._private_scoring()
-        command = pose(algorithm["commanded_flange_base"])
-        measured_flange = pose(motion.get("actual_flange_base", command))
+        if motion.get("actual_flange_base") is None:
+            return classify_grasp(
+                None, None, position_tolerance_m=float(scoring["position_tolerance_m"]),
+                rotation_tolerance_rad=float(scoring["rotation_tolerance_rad"]),
+                motion_completed=False,
+            )
+        measured_flange = pose(motion["actual_flange_base"])
         tool = self._load_pose(workspace / "config" / "tool_profile.yaml", "tool0_to_tcp")
         expected = pose(scoring["case_targets"][case_id])
         measured_tcp = compose(measured_flange, tool)
@@ -446,36 +602,12 @@ class PickCellController:
         output_path: Path,
         log_path: Path,
     ) -> dict[str, Any]:
-        environment = os.environ.copy()
-        python_path = environment.get("PYTHONPATH", "")
-        environment["PYTHONPATH"] = str(workspace) + (
-            os.pathsep + python_path if python_path else ""
+        code, stdout, stderr = self._run_program(
+            workspace, "pick_demo.replay",
+            ["--input", str(input_path), "--output", str(output_path), "--log", str(log_path)],
         )
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pick_demo.replay",
-                "--input",
-                str(input_path),
-                "--output",
-                str(output_path),
-                "--log",
-                str(log_path),
-            ],
-            cwd=workspace,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=35.0,
-            check=False,
-            env=environment,
-        )
-        if result.returncode != 0 or not output_path.is_file():
-            raise RuntimeError(
-                result.stderr.strip() or result.stdout.strip() or "project replay failed"
-            )
+        if code != 0 or not output_path.is_file():
+            raise RuntimeError(stderr.strip() or stdout.strip() or "project replay failed")
         value = self._read_json(output_path)
         if not value or "commanded_flange_base" not in value:
             raise RuntimeError("project replay did not emit a flange command")
@@ -484,7 +616,7 @@ class PickCellController:
     def _copy_project_evidence(self, workspace: Path, run_root: Path) -> None:
         destination = run_root / "project"
         destination.mkdir(parents=True, exist_ok=True)
-        for name in ("cell_calibration.yaml", "tool_profile.yaml"):
+        for name in ("cell_calibration.yaml", "tool_profile.yaml", "perception.yaml"):
             shutil.copy2(workspace / "config" / name, destination / name)
         commit = self._project_commit(workspace)
         (destination / "revision.json").write_text(
@@ -498,6 +630,7 @@ class PickCellController:
         project_commit: dict[str, str],
         timeline: list[dict[str, str]],
         results: list[dict[str, Any]],
+        *, observation_started_at: str | None = None,
     ) -> Path:
         denied = ("private", "truth", "score", "answer", "patch", "expected")
         artifacts: list[dict[str, str]] = []
@@ -518,6 +651,8 @@ class PickCellController:
                     "media_type": self._media_type(file_path),
                     "captured_at": self._artifact_captured_at(file_path),
                     "clock_domain": self._artifact_clock_domain(file_path),
+                    "phase": self._artifact_phase(file_path),
+                    "layer": self.artifact_layer(relative),
                 }
             )
         manifest = {
@@ -525,6 +660,7 @@ class PickCellController:
             "run_id": run_id,
             "source": "gazebo_read_only_environment",
             "created_at": self._now(),
+            "observation_started_at": observation_started_at,
             "clock": {"source": "ros_sim_time_and_utc", "quality": "single_container"},
             "project_revision": project_commit,
             "timeline": timeline,
@@ -547,40 +683,82 @@ class PickCellController:
             raise RuntimeError("private harness scoring data is unavailable")
         return value
 
-    @staticmethod
-    def _vision_input(run_id: str, case_id: str) -> dict[str, Any]:
-        detections = {
-            "A": {
-                "detection_id": "camera-frame-A",
-                "detected_part_in_camera": {
-                    "position": [1.781695155, -0.024170628, -0.085942750],
-                    "quaternion_xyzw": [
-                        0.820718088,
-                        0.176804984,
-                        -0.347379300,
-                        0.417719330,
-                    ],
-                },
-            },
-            "B": {
-                "detection_id": "camera-frame-B",
-                "detected_part_in_camera": {
-                    "position": [1.665609516, 0.093529596, -0.198507317],
-                    "quaternion_xyzw": [
-                        0.820718088,
-                        0.176804984,
-                        -0.347379300,
-                        0.417719330,
-                    ],
-                },
-            },
-        }
-        return {
-            "schema_version": "pick-a17-vision/v1",
-            "run_id": run_id,
-            "part_id": case_id,
-            **detections[case_id],
-        }
+    def _vision_input(
+        self, workspace: Path, capture_root: Path, input_path: Path,
+        run_id: str, case_id: str,
+    ) -> dict[str, Any]:
+        """Execute the bound project's perception on the actual captured pixels."""
+        code, _, stderr = self._run_program(
+            workspace, "pick_demo.perception",
+            ["--capture", str(capture_root), "--part", case_id, "--run-id", run_id,
+             "--output", str(input_path)],
+        )
+        if code != 0:
+            raise RuntimeError(stderr.strip() or "perception program failed")
+        return json.loads(input_path.read_text(encoding="utf-8"))
+
+    def warm_project(self, workspace: Path) -> None:
+        """Start the project's program interpreter before anyone clicks."""
+
+        self._project_worker(workspace.resolve())
+
+    def _run_program(
+        self, workspace: Path, module: str, args: list[str], *, timeout_s: float = 35.0,
+    ) -> tuple[int, str, str]:
+        """Run one of the project's own programs, as ``python -m``, in a warm interpreter."""
+
+        workspace = workspace.resolve()
+        worker = self._project_worker(workspace)
+        with worker["lock"]:
+            worker["process"].stdin.write(json.dumps({"module": module, "args": args}) + "\n")
+            worker["process"].stdin.flush()
+            try:
+                line = worker["lines"].get(timeout=timeout_s)
+            except queue.Empty:
+                line = None
+        if line is None:
+            with self._workers_lock:
+                if self._workers.get(workspace) is worker:
+                    del self._workers[workspace]
+            _stop_worker(worker)
+            raise RuntimeError(f"{module} did not finish; its interpreter was restarted")
+        reply = json.loads(line)
+        return int(reply["code"]), str(reply["stdout"]), str(reply["stderr"])
+
+    def _project_worker(self, workspace: Path) -> dict[str, Any]:
+        code = sorted(
+            (path.relative_to(workspace).as_posix(), path.stat().st_mtime_ns, path.stat().st_size)
+            for path in (workspace / "pick_demo").rglob("*.py")
+        )
+        with self._workers_lock:
+            worker = self._workers.get(workspace)
+            if worker and worker["code"] == code and worker["process"].poll() is None:
+                return worker
+            if worker:
+                _stop_worker(worker)
+            self.runtime_root.mkdir(parents=True, exist_ok=True)
+            log = (self.runtime_root / "project-worker.log").open("a", encoding="utf-8")
+            process = subprocess.Popen(
+                [sys.executable, "-u", str(self.harness_root / "project_worker.py")],
+                cwd=workspace,
+                env={**os.environ, "PYTHONPATH": str(workspace), "PYTHONIOENCODING": "utf-8"},
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log,
+                text=True, encoding="utf-8", errors="replace",
+            )
+            lines: queue.Queue[str | None] = queue.Queue()
+
+            def pump() -> None:
+                assert process.stdout is not None
+                for line in process.stdout:
+                    if line.startswith("{"):
+                        lines.put(line)
+                lines.put(None)
+
+            threading.Thread(target=pump, daemon=True).start()
+            worker = {"code": code, "process": process, "lines": lines,
+                      "lock": threading.Lock(), "log": log}
+            self._workers[workspace] = worker
+            return worker
 
     @classmethod
     def _top_down_pregrasp(cls, command: dict[str, Any]) -> dict[str, list[float]]:
@@ -594,8 +772,10 @@ class PickCellController:
     def _validate_workspace(self, workspace: Path) -> None:
         required = [
             workspace / "pick_demo" / "replay.py",
+            workspace / "pick_demo" / "perception.py",
             workspace / "config" / "cell_calibration.yaml",
             workspace / "config" / "tool_profile.yaml",
+            workspace / "config" / "perception.yaml",
         ]
         missing = [str(path) for path in required if not path.is_file()]
         if missing:
@@ -660,9 +840,18 @@ class PickCellController:
             error = payload["error"]
         elif result.returncode != 0:
             error = (result.stdout + result.stderr)[-500:]
+        # Reaching the X display does not put a window on the desktop.  After monitors
+        # are attached or rescaled while WSLg runs, it can render the window yet never
+        # show it; restarting WSL (wsl --shutdown) re-reads the display layout.
+        on_desktop = _desktop_window_visible("Gazebo Sim")
+        if gz_sim_running and display_connected and on_desktop is False and not error:
+            error = (
+                "Gazebo GUI is running but its window is not on the Windows desktop; "
+                "if displays changed since WSL started, run wsl --shutdown and start the cell again"
+            )
         return {
             "found": gz_sim_running,
-            "visible": gz_sim_running and display_connected,
+            "visible": gz_sim_running and display_connected and on_desktop is not False,
             "error": error,
         }
 
@@ -735,6 +924,24 @@ class PickCellController:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
     @staticmethod
+    def artifact_layer(relative: str) -> str:
+        """What the cell program read, wrote or loaded is software; the rest is observed."""
+
+        if "/algorithm/" in f"/{relative}" or relative.startswith("project/"):
+            return "software"
+        return "observation"
+
+    @staticmethod
+    def _artifact_phase(path: Path) -> str | None:
+        for parent in (path.parent, *path.parents):
+            capture = parent / "capture.json"
+            if capture.is_file():
+                return (PickCellController._read_json(capture) or {}).get("phase")
+        if path.name in {"trajectory.json", "motion.json"}:
+            return "command_execution"
+        return None
+
+    @staticmethod
     def _artifact_captured_at(path: Path) -> str:
         camera_stamp = PickCellController._capture_camera_stamp(path)
         if camera_stamp is not None:
@@ -803,3 +1010,42 @@ class PickCellController:
     def _write_json(path: Path, value: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _stop_worker(worker: dict[str, Any]) -> None:
+    process = worker["process"]
+    if process.poll() is None:
+        process.kill()
+    worker["log"].close()
+
+
+def _stop_workers(workers: dict[Path, dict[str, Any]]) -> None:
+    for worker in list(workers.values()):
+        _stop_worker(worker)
+    workers.clear()
+
+
+def _desktop_window_visible(title_prefix: str) -> bool | None:
+    """Whether a visible top-level Windows window starts with this title; None off Windows."""
+
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    found = False
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def check(window, _data):
+        nonlocal found
+        if user32.IsWindowVisible(window):
+            buffer = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(window, buffer, 256)
+            if buffer.value.startswith(title_prefix):
+                found = True
+                return False
+        return True
+
+    user32.EnumWindows(callback_type(check), 0)
+    return found

@@ -5,6 +5,7 @@ import math
 import os
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,8 @@ JOINT_NAMES = (
 )
 SAFE_APPROACH_JOINTS = (0.0, -1.5707, 0.0, -1.5707, 0.0, 0.0)
 JOINT_ARRIVAL_TOLERANCE_RAD = 0.005
+#: A joint leaving its step-start angle by this much counts as the arm moving.
+MOTION_ONSET_RAD = 0.005
 
 
 class GraspCycleProbe(Node):
@@ -41,14 +44,33 @@ class GraspCycleProbe(Node):
         self.latest_joints: dict[str, float] = {}
         self.joint_trace: list[dict[str, Any]] = []
         self._record_trace = False
+        #: Six-joint IK seed for this request; the environment supplies it when unset.
+        self.ik_seed: list[float] | None = None
+        #: Receives progress events such as a step starting or the arm starting to move.
+        self.on_event: Callable[[dict[str, Any]], None] | None = None
+        self._step: str | None = None
+        self._step_origin: list[float] | None = None
         self.move_group = ActionClient(self, MoveGroup, "/move_action")
         self.compute_ik = self.create_client(GetPositionIK, "/compute_ik")
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.create_subscription(JointState, "/joint_states", self._joint_state, 30)
 
+    def _emit(self, event: dict[str, Any]) -> None:
+        if self.on_event is not None:
+            self.on_event(event)
+
     def _joint_state(self, message: JointState) -> None:
         self.latest_joints = dict(zip(message.name, message.position, strict=True))
+        ready = all(name in self.latest_joints for name in JOINT_NAMES)
+        if self._step_origin is not None and ready:
+            moved = max(
+                abs(self.latest_joints[name] - origin)
+                for name, origin in zip(JOINT_NAMES, self._step_origin, strict=True)
+            )
+            if moved > MOTION_ONSET_RAD:
+                self._step_origin = None
+                self._emit({"event": "moving", "step": self._step})
         if self._record_trace and all(name in self.latest_joints for name in JOINT_NAMES):
             stamp_s = float(message.header.stamp.sec) + float(message.header.stamp.nanosec) * 1e-9
             if self.joint_trace and stamp_s - float(self.joint_trace[-1]["stamp_s"]) < 0.1:
@@ -93,8 +115,10 @@ class GraspCycleProbe(Node):
         # A/B demonstration.
         request.ik_request.robot_state.is_diff = False
         seed_value = os.environ.get("PICK_CELL_IK_SEED")
-        if seed_value:
-            seed = json.loads(seed_value)
+        seed = self.ik_seed if self.ik_seed is not None else (
+            json.loads(seed_value) if seed_value else None
+        )
+        if seed is not None:
             if not isinstance(seed, list) or len(seed) != len(JOINT_NAMES):
                 raise ValueError("PICK_CELL_IK_SEED must contain six joint values")
             request.ik_request.robot_state.joint_state.name = list(JOINT_NAMES)
@@ -181,6 +205,12 @@ class GraspCycleProbe(Node):
         goal.planning_options.planning_scene_diff.is_diff = True
         goal.planning_options.planning_scene_diff.robot_state.is_diff = True
         self._record_trace = True
+        self._step = name
+        self._step_origin = (
+            [self.latest_joints[joint] for joint in JOINT_NAMES]
+            if all(joint in self.latest_joints for joint in JOINT_NAMES) else None
+        )
+        self._emit({"event": "step", "step": name})
         started = time.monotonic()
         send = self.move_group.send_goal_async(goal)
         rclpy.spin_until_future_complete(self, send, timeout_sec=20.0)
@@ -286,14 +316,17 @@ def _target_from_environment() -> dict[str, list[float]]:
     return target
 
 
-def main() -> int:
-    rclpy.init()
-    node = GraspCycleProbe()
+def run_grasp(
+    node: GraspCycleProbe,
+    target: dict[str, list[float]],
+    pregrasp: dict[str, list[float]] | None,
+) -> dict[str, Any]:
+    """Approach, descend, retract and retreat once; the payload records every step."""
+
     steps: list[dict[str, Any]] = []
-    payload: dict[str, Any]
+    node.joint_trace = []
+    node.latest_joints = {}
     try:
-        target = _target_from_environment()
-        pregrasp = _pose_from_environment("PICK_CELL_PREGRASP_FLANGE", required=False)
         node.wait_ready(60.0)
         approach = node.execute_joint_target("APPROACH", SAFE_APPROACH_JOINTS)
         steps.append(approach)
@@ -318,9 +351,8 @@ def main() -> int:
                 )
         retreat = node.execute_joint_target("RETREAT", SAFE_APPROACH_JOINTS)
         steps.append(retreat)
-        succeeded = retreat["moveit_error_code"] == MoveItErrorCodes.SUCCESS
-        payload = {
-            "success": succeeded,
+        return {
+            "success": retreat["moveit_error_code"] == MoveItErrorCodes.SUCCESS,
             "robot": "UR5e",
             "planner": "MoveIt 2 / OMPL RRTConnect",
             "steps": steps,
@@ -328,23 +360,39 @@ def main() -> int:
             "joint_trajectory": node.joint_trace,
         }
     except Exception as exc:
-        payload = {
+        return {
             "success": False,
             "error": str(exc),
             "steps": steps,
             "joint_trajectory": node.joint_trace,
         }
     finally:
-        output = os.environ.get("PICK_CELL_MOTION_OUTPUT")
-        if output:
-            path = Path(output)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-            )
-        print("PICK_CELL_MOTION=" + json.dumps(payload, sort_keys=True), flush=True)
+        node._step_origin = None
+
+
+def write_motion(payload: dict[str, Any], output: str | None) -> None:
+    if output:
+        path = Path(output)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    rclpy.init()
+    node = GraspCycleProbe()
+    try:
+        payload = run_grasp(
+            node,
+            _target_from_environment(),
+            _pose_from_environment("PICK_CELL_PREGRASP_FLANGE", required=False),
+        )
+    except Exception as exc:
+        payload = {"success": False, "error": str(exc), "steps": [], "joint_trajectory": []}
+    finally:
         node.destroy_node()
         rclpy.shutdown()
+    write_motion(payload, os.environ.get("PICK_CELL_MOTION_OUTPUT"))
+    print("PICK_CELL_MOTION=" + json.dumps(payload, sort_keys=True), flush=True)
     return 0 if payload["success"] else 1
 
 

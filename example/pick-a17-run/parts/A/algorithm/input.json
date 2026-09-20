@@ -1,0 +1,51 @@
+{
+  "schema_version": "pick-a17-vision/v2",
+  "run_id": "run-20260912T082922Z-f603527a",
+  "part_id": "A",
+  "detection_id": "capture-654e88c87fe9-A",
+  "capture_id": "capture-654e88c87fe9",
+  "frame_id": "rgbd_camera/camera_link/rgbd",
+  "source_stamp_s": 624.493,
+  "clock_domain": "ros_sim_time_s",
+  "method": "RGB connected color region, registered depth, upright known-shape fit",
+  "pose_scope": "Position measured; orientation supplied by fixture grasp-frame recipe.",
+  "source_hashes": {
+    "rgb.png": "93523f738b80d613392e622a2db8ed16b06c4c053781dde98720de5de2e63fa2",
+    "depth.npy": "4b3f2d9d44724344f35febb5e9ace57fa9acec0ebef944a3c59ba075d275d1ba",
+    "camera-info.json": "92b7702269c37d2cf35e86ab7e03369b4dfbc0d94dd19db0a90de09af211a94d",
+    "capture.json": "e43a08180efd9d6ae4ed8e8552262f550a2ebb74d5eca86179be74d2f124ba1c"
+  },
+  "color_pixel_count": 404,
+  "roi_xyxy": [
+    323,
+    274,
+    356,
+    300
+  ],
+  "target_depth_valid_ratio": 1.0,
+  "top_surface_point_count": 27,
+  "status": "detected",
+  "visible_top_span_xy_m": [
+    0.09738376316312775,
+    0.0348287178098215
+  ],
+  "detected_part_in_camera": {
+    "position": [
+      1.793102116283733,
+      -0.060941535422703585,
+      -0.14082200352403923
+    ],
+    "quaternion_xyzw": [
+      0.33470106715951553,
+      -0.1703521680811883,
+      -0.8259695843936496,
+      0.42039217420035513
+    ]
+  },
+  "assumptions": [
+    "upright known-height part",
+    "unoccluded top surface",
+    "declared camera extrinsics",
+    "fixture-prescribed orientation"
+  ]
+}

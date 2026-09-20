@@ -22,20 +22,26 @@ class Recheck:
     applied_at: datetime | None
     before: dict[str, bool]
     after: dict[str, bool]
+    observation_started_at: datetime | None = None
+    context_matches: bool = False
 
     @property
     def collected_after_the_change(self) -> bool:
         """Evidence gathered before the change cannot speak about the change."""
 
-        return self.applied_at is not None and self.applied_at < self.after_created_at
+        return (
+            self.applied_at is not None and self.observation_started_at is not None
+            and self.applied_at < self.observation_started_at <= self.after_created_at
+            and self.before_run_id != self.after_run_id
+        )
 
     @property
     def recovered(self) -> bool:
-        return bool(self.after) and all(self.after.values())
+        return bool(self.after) and self.context_matches and all(self.after.values())
 
     @property
     def scope(self) -> str:
-        if not self.collected_after_the_change:
+        if not self.collected_after_the_change or not self.context_matches:
             return "not_a_recheck"
         return "site_recovered" if self.recovered else "site_still_failing"
 
@@ -46,6 +52,10 @@ class Recheck:
             "before": self.before,
             "after": self.after,
             "scope": self.scope,
+            "context_matches": self.context_matches,
+            "observation_started_at": (
+                self.observation_started_at.isoformat() if self.observation_started_at else None
+            ),
         }
 
 
@@ -64,4 +74,10 @@ def recheck(
         applied_at=applied_at,
         before={item.part_id: item.success for item in before.results},
         after={item.part_id: item.success for item in after.results},
+        observation_started_at=after.observation_started_at,
+        context_matches=(
+            before.source == after.source and bool(before.results)
+            and {item.part_id for item in before.results}
+            == {item.part_id for item in after.results}
+        ),
     )

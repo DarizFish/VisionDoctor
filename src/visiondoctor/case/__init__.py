@@ -1,6 +1,6 @@
-"""Case, diagnostic chain, and the gates a conclusion has to pass."""
+"""Case state, diagnostic domain groups, system-graph findings, and hard gates."""
 
-from .case import Case, Evidence
+from .case import LAYER_ORDER, Case, Evidence
 from .chain import (
     CORE_SEGMENTS,
     GUIDED_SEGMENTS,
@@ -12,13 +12,20 @@ from .chain import (
     SegmentStatus,
     chain_for,
 )
-from .gates import GateResult, approval_gate, diagnosis_gate
+from .gates import (
+    GateResult,
+    approval_gate,
+    repair_gate,
+    software_localizations,
+    source_layer_gate,
+)
 from .repair import ApprovalRecord, RepairPlan
 from .service import CaseRecord, CaseService
 
 __all__ = [
     "CORE_SEGMENTS",
     "GUIDED_SEGMENTS",
+    "LAYER_ORDER",
     "SEGMENT_NAME",
     "SEGMENT_SCOPE",
     "ApprovalRecord",
@@ -34,5 +41,7 @@ __all__ = [
     "SegmentStatus",
     "approval_gate",
     "chain_for",
-    "diagnosis_gate",
+    "repair_gate",
+    "software_localizations",
+    "source_layer_gate",
 ]

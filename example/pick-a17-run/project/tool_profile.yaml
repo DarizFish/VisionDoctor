@@ -1,0 +1,7 @@
+tool_name: two_finger_demo_gripper
+# Flange to grasp centre of the compact mounted two-finger tool: 0.035 m along tool0 z,
+# with the 0.02 rad seating yaw of the tool plate.
+tool0_to_tcp:
+  position: [0.000, 0.000, 0.035]
+  quaternion_xyzw: [0.0, 0.0, 0.0099998, 0.99995]
+units: {length: m, angle: rad, quaternion: xyzw}

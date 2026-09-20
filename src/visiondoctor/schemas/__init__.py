@@ -26,7 +26,6 @@ from visiondoctor.schemas.models import (
     CaseEvidence,
     CaseExecutionResult,
     Decision,
-    DiagnosisReport,
     EvidenceBundle,
     ExecutionResult,
     ExecutionStatus,
@@ -49,7 +48,6 @@ from visiondoctor.schemas.models import (
     UnitTestResult,
     ValidationReport,
     VisionOutputs,
-    WorkflowState,
 )
 
 __all__ = [
@@ -61,7 +59,6 @@ __all__ = [
     "CaseEvidence",
     "CaseExecutionResult",
     "Decision",
-    "DiagnosisReport",
     "EvidenceBundle",
     "ExecutionResult",
     "ExecutionStatus",
@@ -84,7 +81,6 @@ __all__ = [
     "UnitTestResult",
     "ValidationReport",
     "VisionOutputs",
-    "WorkflowState",
     "AmbiguityOption",
     "AmbiguityStatus",
     "AssetKind",

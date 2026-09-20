@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -11,6 +12,11 @@ from visiondoctor.repair import ProjectBinding
 
 from .chain import GUIDED_SEGMENTS, Hypothesis, Segment, SegmentFinding, SegmentStatus, chain_for
 from .repair import RepairPlan
+
+#: How deep an observation reaches.  The software layer is what the running
+#: program read, wrote and logged; the source layer is how it is written.
+Layer = Literal["observation", "software", "source"]
+LAYER_ORDER: dict[str, int] = {"observation": 0, "software": 1, "source": 2}
 
 
 class Evidence(BaseModel):
@@ -26,6 +32,10 @@ class Evidence(BaseModel):
     clock_domain: str
     summary: str
     sha256: str | None = None
+    # Small computed measurements remain inspectable after a case is reloaded.
+    content: dict[str, Any] | None = None
+    phase: str | None = None
+    layer: Layer = "observation"
 
 
 class Case:
@@ -64,7 +74,7 @@ class Case:
         return binding
 
     def extend_for_guided_motion(self) -> tuple[Segment, ...]:
-        """Vision output is consumed by an actuator, so three more segments exist."""
+        """Enable the additional diagnostic domains used when vision drives motion."""
 
         self.guided_motion = True
         return GUIDED_SEGMENTS
@@ -89,6 +99,8 @@ class Case:
                     captured_at=artifact.captured_at,
                     clock_domain=artifact.clock_domain,
                     sha256=artifact.sha256,
+                    phase=artifact.phase,
+                    layer="software" if artifact.layer == "software" else "observation",
                     summary=f"{artifact.path} collected from {bundle.source}",
                 )
             )
@@ -108,30 +120,65 @@ class Case:
         return tuple(admitted)
 
     def record(self, finding: SegmentFinding) -> SegmentFinding:
-        """Take a verdict on one segment, but never let a blank one erase a real one."""
+        """Revise one target; previous judgments remain in the turn history."""
 
-        self._require_known(finding.evidence_ids)
-        standing = next((item for item in self.findings if item.segment is finding.segment), None)
-        if (
-            standing is not None
-            and finding.status is SegmentStatus.UNTESTED
-            and standing.status is not SegmentStatus.UNTESTED
-        ):
-            return standing
-        self.findings = [item for item in self.findings if item.segment is not finding.segment]
+        self.validate_finding(finding)
+        key = finding.target_id or finding.segment.value
+        self.findings = [
+            item for item in self.findings if (item.target_id or item.segment.value) != key
+        ]
         self.findings.append(finding)
         return finding
 
+    def validate_finding(self, finding: SegmentFinding) -> None:
+        self._require_known(finding.evidence_ids)
+        self._require_target(finding.target_id, finding.segment)
+        if finding.status is not SegmentStatus.UNTESTED and not self.running_evidence(
+            finding.evidence_ids
+        ):
+            raise ValueError(
+                f"{finding.status} on {finding.target_id or finding.segment.value} rests on "
+                "source alone; source explains a located fault but never locates or clears one"
+            )
+
+    def layer_of(self, evidence_id: str) -> str:
+        for item in self.evidence:
+            if item.evidence_id == evidence_id:
+                return item.layer
+        raise KeyError(f"{evidence_id} is not in this case")
+
+    def running_evidence(self, evidence_ids: tuple[str, ...]) -> tuple[str, ...]:
+        """The citations that describe what actually ran, not how it is written."""
+
+        return tuple(name for name in evidence_ids if self.layer_of(name) != "source")
+
+    def validate_hypothesis(self, hypothesis: Hypothesis) -> None:
+        self._require_known(hypothesis.evidence_ids + hypothesis.counter_evidence_ids)
+        self._require_target(hypothesis.target_id, hypothesis.target_segment)
+
     def propose(self, hypothesis: Hypothesis) -> Hypothesis:
-        self._require_known(hypothesis.evidence_ids)
+        self.validate_hypothesis(hypothesis)
+        self.hypotheses = [
+            item for item in self.hypotheses if item.hypothesis_id != hypothesis.hypothesis_id
+        ]
         self.hypotheses.append(hypothesis)
         return hypothesis
 
     def demarcation(self) -> dict[Segment, SegmentStatus]:
         verdicts = dict.fromkeys(self.segments, SegmentStatus.UNTESTED)
+        rank = {SegmentStatus.UNTESTED: 0, SegmentStatus.CLEARED: 1, SegmentStatus.SUSPECT: 2}
         for finding in self.findings:
-            verdicts[finding.segment] = finding.status
+            if rank[finding.status] > rank[verdicts.get(finding.segment, SegmentStatus.UNTESTED)]:
+                verdicts[finding.segment] = finding.status
         return verdicts
+
+    @staticmethod
+    def _require_target(target_id: str | None, segment: Segment) -> None:
+        if target_id:
+            from .graph import target_segment
+
+            if target_segment(target_id) is not segment:
+                raise ValueError(f"graph target {target_id} does not belong to {segment.value}")
 
     def add_evidence(self, evidence: Evidence) -> Evidence:
         """Take in evidence a tool produced, and mark it as actually seen."""

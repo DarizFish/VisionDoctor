@@ -8,6 +8,7 @@ that two people -- or a person and an agent -- can disagree about precisely.
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -21,6 +22,8 @@ class Segment(StrEnum):
     CALIBRATION = "calibration"
     INTERFACE = "interface"
     ROBOT = "robot"
+    PLANNING = "planning"
+    GRASPING = "grasping"
 
 
 #: Every vision cell has these.
@@ -32,13 +35,13 @@ CORE_SEGMENTS: tuple[Segment, ...] = (
     Segment.TASK_RESULT,
 )
 
-#: These three arrive together, on one signal: the vision output is consumed by
-#: an actuator in some coordinate frame.  No actuator, no hand-eye calibration,
-#: no frame handover, no robot side.
+#: Grasp-specific groups. The dependency graph carries the actual relationships.
 GUIDED_SEGMENTS: tuple[Segment, ...] = (
     Segment.CALIBRATION,
     Segment.INTERFACE,
     Segment.ROBOT,
+    Segment.PLANNING,
+    Segment.GRASPING,
 )
 
 
@@ -51,6 +54,8 @@ SEGMENT_NAME: dict[Segment, str] = {
     Segment.CALIBRATION: "标定配置",
     Segment.INTERFACE: "变换接口",
     Segment.ROBOT: "机器人侧",
+    Segment.PLANNING: "抓取策略",
+    Segment.GRASPING: "夹持与保持",
 }
 
 #: What each segment covers.  A map is only shared if both sides read it the
@@ -70,7 +75,9 @@ SEGMENT_SCOPE: dict[Segment, str] = {
         "视觉输出被下游消费时所依赖的约定：坐标系、变换、单位、字段契约。"
         "这一段问的是这些数值被怎么使用。"
     ),
-    Segment.ROBOT: "执行机构自身：路径规划、伺服跟踪、夹爪动作与机械状态。",
+    Segment.ROBOT: "机器人执行：轨迹、伺服跟踪、实际到位与机械状态。",
+    Segment.PLANNING: "从目标选择抓取点、接近方向与路径，满足工艺、工具和可达性约束。",
+    Segment.GRASPING: "到位之后的接触、闭合、夹持与抬起保持；到位成功不证明抓住。",
 }
 
 
@@ -93,6 +100,9 @@ class SegmentFinding(BaseModel):
     status: SegmentStatus
     note: str
     evidence_ids: tuple[str, ...] = ()
+    target_id: str | None = None
+    checked_scope: str = ""
+    limitations: str = ""
 
     @model_validator(mode="after")
     def _conclusions_cite_evidence(self) -> SegmentFinding:
@@ -110,6 +120,13 @@ class Hypothesis(BaseModel):
     target_segment: Segment
     statement: str
     evidence_ids: tuple[str, ...] = ()
+    target_id: str | None = None
+    prediction: str = ""
+    counter_evidence_ids: tuple[str, ...] = ()
+    next_check: str = ""
+    remedy: Literal[
+        "configuration", "handoff", "source_patch", "physical", "more_evidence"
+    ] = "more_evidence"
 
 
 def chain_for(*, guided_motion: bool) -> tuple[Segment, ...]:

@@ -16,7 +16,9 @@ from visiondoctor.repair import ProjectBinding, Recheck, land, recheck
 from . import store
 from .case import Case, Evidence
 from .chain import SEGMENT_NAME, SEGMENT_SCOPE
-from .gates import approval_gate, diagnosis_gate
+from .gates import approval_gate, software_localizations, source_layer_gate
+from .graph import consuming_node
+from .isolation import isolation_view, node_standing
 from .repair import ApprovalRecord, RepairPlan
 
 
@@ -71,7 +73,7 @@ class CaseService:
                 ),
                 "evidence": len(record.case.evidence),
                 "observations": len(record.case.observations),
-                "gate": diagnosis_gate(record.case).passed,
+                "gate": source_layer_gate(record.case).passed,
             }
             for key, record in self.records.items()
         ]
@@ -88,8 +90,10 @@ class CaseService:
         adapter = FileBundleAdapter(Path(directory))
         bundle = adapter.collect()
         admitted = record.case.admit(bundle)
-        record.adapter = adapter
-        record.bundle = bundle
+        # The first observation is the one under diagnosis; later ones, such as
+        # a normal reference run, are compared against it.
+        if record.bundle is None:
+            record.adapter, record.bundle = adapter, bundle
         record.observation_dirs.append(str(Path(directory)))
         record.messages.append(
             {
@@ -205,8 +209,12 @@ class CaseService:
         revision: str = "",
         replay_command: tuple[str, ...] = (),
         test_command: tuple[str, ...] | None = None,
+        source_readable: bool = True,
     ) -> dict[str, Any]:
         """Bind the repository at the revision that produced the observation.
+
+        ``source_readable=False`` stands for a site that holds only the released
+        program: it can be re-run on recorded inputs, its source stays unseen.
 
         The bundle already says which commit was running when the evidence was
         taken, so nobody is asked to type it.  Reading whatever the working tree
@@ -224,10 +232,12 @@ class CaseService:
                 revision=resolved,
                 replay_command=tuple(replay_command),
                 test_command=tuple(test_command) if test_command else None,
+                source_readable=source_readable,
             )
         )
         self.keep(case_id)
-        return {"repository": str(binding.repository), "revision": binding.revision}
+        return {"repository": str(binding.repository), "revision": binding.revision,
+                "runnable": binding.runnable, "source_readable": binding.source_readable}
 
     # ---- pushing it forward ------------------------------------------------------
 
@@ -235,8 +245,9 @@ class CaseService:
         """Start a turn and return at once; the work is watched, not waited on."""
 
         record = self.record(case_id)
-        if record.bundle is None and not record.uploads:
-            raise ValueError("这个案件还没有任何材料：先附上证据包或上传图片、日志")
+        # A case with nothing in it still gets a turn: with no evidence the model
+        # has nothing to claim, so it answers and says what it would need. Refusing
+        # here made an ordinary question look like a broken page.
         if record.running is not None:
             raise ValueError("这个案件正在推进中，等这一轮结束再说下一句")
         if record.case.title == "新的诊断":
@@ -263,6 +274,7 @@ class CaseService:
                 gateway=_model_gateway(),
                 vision=_vision_gateway(),
                 uploads=record.uploads,
+                observation_dirs=tuple(Path(path) for path in record.observation_dirs),
                 observer=lambda call: record.running["calls"].append(
                     _call_summary(call)
                 ),
@@ -372,6 +384,7 @@ class CaseService:
         record.observation_dirs.append(str(Path(directory)))
         outcome = recheck(before=record.bundle, after=after, applied_at=record.applied_at)
         record.recheck = outcome
+        self._recheck_structure(record, Path(directory), after)
         record.messages.append(
             {
                 "role": "source",
@@ -382,18 +395,70 @@ class CaseService:
         self.keep(case_id)
         return outcome.as_dict()
 
+    def _recheck_structure(
+        self, record: CaseRecord, directory: Path, after: ObservationBundle,
+    ) -> None:
+        """Run the same structural tests again, on the same records of the new run.
+
+        The recheck verdict stays with the task results; this only shows whether
+        the constraints that failed before hold now.
+        """
+
+        from visiondoctor.investigation import Toolbox
+
+        case = record.case
+        by_reference = {
+            item.reference: item.evidence_id for item in case.evidence
+            if item.bundle_id == after.run_id
+        }
+        toolbox = Toolbox(
+            case, FileBundleAdapter(directory), after,
+            uploads=record.uploads,
+            observation_dirs=tuple(Path(path) for path in record.observation_dirs),
+        )
+        for row in isolation_view(case):
+            if not row["diagnosed_run"]:
+                continue
+            bindings, carried = {}, True
+            for name, evidence_id in row["bindings"].items():
+                source = next(item for item in case.evidence if item.evidence_id == evidence_id)
+                if source.bundle_id != row["run_id"]:
+                    bindings[name] = evidence_id  # a reference run stays the reference
+                elif source.reference in by_reference:
+                    bindings[name] = by_reference[source.reference]
+                else:
+                    carried = False
+            if not carried:
+                continue
+            try:
+                toolbox.structural_diagnose(
+                    template_ids=row["templates"], part_id=row["part_id"], bindings=bindings,
+                )
+            except (KeyError, ValueError, TypeError) as exc:
+                record.messages.append({
+                    "role": "source", "content": f"复核核算未完成（工件 {row['part_id']}）",
+                    "detail": str(exc),
+                })
+
     # ---- what a viewer sees ------------------------------------------------------
 
     def view(self, case_id: str) -> dict[str, Any]:
+        from visiondoctor.knowledge import catalogue
+
+        from .graph import graph_view
+
         record = self.record(case_id)
         case = record.case
-        verdict = diagnosis_gate(case)
+        verdict = source_layer_gate(case)
+        layers = {item.evidence_id: item.layer for item in case.evidence}
         return {
             "case_id": case.case_id,
             "title": case.title,
             "observation": self._observation(record),
             "project": self._project(case),
             "chain": self._chain(case),
+            "graph": graph_view(case.findings, layers),
+            "knowledge_catalogue": catalogue(),
             "messages": record.messages,
             "hypotheses": [
                 {
@@ -405,17 +470,35 @@ class CaseService:
             "evidence": [
                 {
                     "evidence_id": item.evidence_id,
+                    "bundle_id": item.bundle_id,
                     "reference": item.reference,
                     "media_type": item.media_type,
                     "captured_at": item.captured_at.isoformat(),
+                    "phase": item.phase,
+                    "layer": item.layer,
+                    "summary": item.summary,
                     "examined": item.evidence_id in case.examined,
                 }
                 for item in case.evidence
             ],
-            "gates": {
-                "diagnosis": verdict.model_dump(mode="json"),
-                "source_visible": bool(case.project and verdict.passed),
+            "access": {
+                "observation": bool(case.observations),
+                "runnable": bool(case.project and case.project.runnable),
+                "source_readable": bool(case.project and case.project.source_readable),
             },
+            "gates": {
+                "source_layer": {
+                    **verdict.model_dump(mode="json"),
+                    "basis": [
+                        {"target_id": item.target_id, "note": item.note,
+                         "evidence_ids": list(item.evidence_ids)}
+                        for item in software_localizations(case)
+                    ],
+                },
+            },
+            "isolation": isolation_view(case),
+            "node_standing": node_standing(case),
+            "divergence": _divergence(case),
             "plans": self._plans(record),
             "turns": [turn.model_dump(mode="json") for turn in record.turns],
             "running": record.running,
@@ -442,22 +525,23 @@ class CaseService:
         return {
             "repository": str(case.project.repository),
             "revision": case.project.revision,
+            "runnable": case.project.runnable,
+            "source_readable": case.project.source_readable,
         }
 
     @staticmethod
     def _chain(case: Case) -> list[dict[str, Any]]:
-        findings = {item.segment: item for item in case.findings}
         rows = []
         for segment, status in case.demarcation().items():
-            finding = findings.get(segment)
+            findings = [item for item in case.findings if item.segment is segment]
             rows.append(
                 {
                     "segment": segment.value,
                     "name": SEGMENT_NAME[segment],
                     "status": status.value,
                     "scope": SEGMENT_SCOPE[segment],
-                    "note": finding.note if finding else "",
-                    "evidence_ids": list(finding.evidence_ids) if finding else [],
+                    "note": "；".join(item.note for item in findings),
+                    "evidence_ids": sorted({key for item in findings for key in item.evidence_ids}),
                 }
             )
         return rows
@@ -486,6 +570,23 @@ class CaseService:
             if plan.plan_id == plan_id:
                 return plan
         raise KeyError(f"没有这个候选：{plan_id}")
+
+
+def _divergence(case: Case) -> list[dict[str, str]]:
+    """Where the model's verdict and the host's isolation say different things."""
+
+    standing = node_standing(case)
+    rows = []
+    for finding in case.findings:
+        # Handoffs are judged on their own; only a verdict on the node itself is compared.
+        if consuming_node(finding.target_id) != finding.target_id:
+            continue
+        host = standing.get(str(finding.target_id))
+        model = finding.status.value
+        if (model, host) in {("cleared", "candidate"), ("suspect", "exonerated"),
+                             ("cleared", "unexamined")}:
+            rows.append({"target_id": str(finding.target_id), "model": model, "host": host})
+    return rows
 
 
 def _vision_gateway():

@@ -17,7 +17,6 @@ from visiondoctor.multimodal import (
     VisionModelProtocolError,
     VisionSettings,
 )
-from visiondoctor.sessions import DiagnosisSessionService
 
 
 def _settings() -> VisionSettings:
@@ -174,69 +173,3 @@ def test_ollama_gateway_rejects_incomplete_response_without_fallback(tmp_path: P
             visible_name="现场.png",
             user_context="",
         )
-
-
-def test_image_format_pixel_limit_and_exif_are_enforced() -> None:
-    png = base64.b64decode(_png_attachment("x.png", (1, 2, 3))["content_base64"])
-    with pytest.raises(ValueError, match="declared image type"):
-        DiagnosisSessionService._prepare_model_image(
-            png, declared_media_type="image/jpeg"
-        )
-
-    oversized = io.BytesIO()
-    Image.new("1", (6000, 5000)).save(oversized, format="PNG")
-    with pytest.raises(ValueError, match="safe pixel limit"):
-        DiagnosisSessionService._prepare_model_image(
-            oversized.getvalue(), declared_media_type="image/png"
-        )
-
-    source = io.BytesIO()
-    image = Image.new("RGB", (10, 20), (40, 90, 180))
-    exif = Image.Exif()
-    exif[274] = 6
-    image.save(source, format="JPEG", exif=exif)
-    preview, metadata = DiagnosisSessionService._prepare_model_image(
-        source.getvalue(), declared_media_type="image/jpeg"
-    )
-    with Image.open(io.BytesIO(preview)) as normalized:
-        assert normalized.size == (20, 10)
-        assert not normalized.getexif()
-    assert metadata["exif_orientation_applied"] is True
-
-
-def test_multiple_images_are_all_assessed_and_failure_never_calls_text_model(
-    tmp_path: Path,
-) -> None:
-    conversation = _ConversationGateway()
-    vision = _VisionGateway()
-    service = DiagnosisSessionService(
-        tmp_path / "sessions", gateway=conversation, vision_gateway=vision
-    )
-    session = service.create()
-    result = service.turn(
-        session["session_id"],
-        message="比较这两张现场图。",
-        attachments=(
-            _png_attachment("左侧相机.png", (250, 10, 10)),
-            _png_attachment("右侧相机.png", (10, 10, 250)),
-        ),
-    )
-    assistant = result["messages"][-1]
-    assert vision.names == ["左侧相机.png", "右侧相机.png"]
-    assert len(assistant["image_assessments"]) == 2
-    assert conversation.calls == 1
-
-    failed_conversation = _ConversationGateway()
-    failed_service = DiagnosisSessionService(
-        tmp_path / "failed-sessions",
-        gateway=failed_conversation,
-        vision_gateway=_VisionGateway(fail=True),
-    )
-    failed = failed_service.create()
-    with pytest.raises(VisionModelError):
-        failed_service.turn(
-            failed["session_id"],
-            message="看这张图。",
-            attachments=(_png_attachment("失败.png", (1, 2, 3)),),
-        )
-    assert failed_conversation.calls == 0

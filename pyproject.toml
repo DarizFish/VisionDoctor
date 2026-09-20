@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "visiondoctor"
 version = "0.1.0"
-description = "Environment-decoupled multimodal machine-vision fault diagnosis and repair core"
+description = "Evidence-driven diagnosis and repair for vision-guided grasping systems"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -42,9 +42,6 @@ packages = ["src/visiondoctor"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]
-markers = [
-  "integration: exercises installed external infrastructure such as Docker and Gazebo",
-]
 
 [tool.ruff]
 line-length = 100
